@@ -1,0 +1,309 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Build x-bar and R charts, and read them in the right order.</li>
+    <li>Use x-bar and s charts, and say when they are preferable.</li>
+    <li>Choose a subgroup size and understand what it buys.</li>
+  </ul>
+</Callout>
+
+Variable data is measured on a continuous scale — a length, a weight, a temperature. It carries far
+more information per observation than attribute data, so variable charts detect shifts with much
+smaller samples.
+
+They always come in **pairs**: one chart for the process centre and one for its spread. A process
+can drift in either without the other moving, and a single chart would miss half of what matters.
+
+<h2 id="xbar-and-r">x-bar and R</h2>
+
+The classical pairing. For each subgroup, compute the mean $\bar{x}$ and the range
+$R = \max - \min$.
+
+$$
+\bar{\bar{x}} = \text{mean of subgroup means}, \qquad \bar{R} = \text{mean of subgroup ranges}
+$$
+
+$$
+\text{x-bar chart:} \quad \bar{\bar{x}} \pm A_2\bar{R}
+\qquad
+\text{R chart:} \quad UCL = D_4\bar{R},\; LCL = D_3\bar{R}
+$$
+
+The constants $A_2$, $D_3$ and $D_4$ depend only on the subgroup size and are tabulated. They
+exist because $\bar{R}/d_2$ is an unbiased estimator of $\sigma$, and the constants fold that
+conversion together with the factor of 3.
+
+<Callout title="Read the R chart first" variant="warning">
+  <p>
+    The x-bar limits are computed <em>from</em> R̄. If the spread is out of control, R̄ is not a
+    meaningful estimate of anything, and the x-bar limits built on it are wrong. Always establish
+    that the spread is stable before interpreting the centre — this is the single most-violated
+    rule in control charting.
+  </p>
+</Callout>
+
+<PythonCell label="x-bar and R charts">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+# Control chart constants, indexed by subgroup size.
+CONSTANTS = pd.DataFrame({
+    "n":  [2, 3, 4, 5, 6, 7, 8, 9, 10],
+    "A2": [1.880, 1.023, 0.729, 0.577, 0.483, 0.419, 0.373, 0.337, 0.308],
+    "A3": [2.659, 1.954, 1.628, 1.427, 1.287, 1.182, 1.099, 1.032, 0.975],
+    "d2": [1.128, 1.693, 2.059, 2.326, 2.534, 2.704, 2.847, 2.970, 3.078],
+    "D3": [0.000, 0.000, 0.000, 0.000, 0.000, 0.076, 0.136, 0.184, 0.223],
+    "D4": [3.267, 2.574, 2.282, 2.114, 2.004, 1.924, 1.864, 1.816, 1.777],
+    "B3": [0.000, 0.000, 0.000, 0.000, 0.030, 0.118, 0.185, 0.239, 0.284],
+    "B4": [3.267, 2.568, 2.266, 2.089, 1.970, 1.882, 1.815, 1.761, 1.716],
+    "c4": [0.7979, 0.8862, 0.9213, 0.9400, 0.9515, 0.9594, 0.9650, 0.9693, 0.9727],
+}).set_index("n")
+
+measurements = pd.read_csv("qc-measurements.csv")
+size = measurements.groupby("subgroup").size().iloc[0]
+k = CONSTANTS.loc[size]
+print(f"subgroup size n = {size}")
+print(k.to_string())
+
+grouped = measurements.groupby("subgroup")["value"]
+xbar = grouped.mean()
+ranges = grouped.apply(lambda v: v.max() - v.min())
+
+xbarbar = xbar.mean()
+rbar = ranges.mean()
+
+r_ucl, r_lcl = k["D4"] * rbar, k["D3"] * rbar
+x_ucl, x_lcl = xbarbar + k["A2"] * rbar, xbarbar - k["A2"] * rbar
+
+print()
+print(f"R chart:      CL {rbar:.4f}   UCL {r_ucl:.4f}   LCL {r_lcl:.4f}")
+print(f"x-bar chart:  CL {xbarbar:.4f}   UCL {x_ucl:.4f}   LCL {x_lcl:.4f}")
+print(f"sigma estimated as Rbar/d2 = {rbar / k['d2']:.4f}")
+
+r_out = ranges[(ranges > r_ucl) | (ranges < r_lcl)]
+x_out = xbar[(xbar > x_ucl) | (xbar < x_lcl)]
+print()
+print(f"R chart out of control:     {list(r_out.index)}")
+print(f"x-bar chart out of control: {list(x_out.index)}")
+
+fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.5, 6), sharex=True)
+top.plot(xbar.index, xbar.values, marker="o", markersize=3.5, linewidth=1)
+top.axhline(xbarbar, linewidth=1.5)
+top.axhline(x_ucl, linewidth=1.2, linestyle="--")
+top.axhline(x_lcl, linewidth=1.2, linestyle="--")
+top.scatter(x_out.index, x_out.values, s=55, zorder=5, marker="s")
+top.set_ylabel("subgroup mean")
+top.set_title("x-bar chart")
+
+bottom.plot(ranges.index, ranges.values, marker="o", markersize=3.5, linewidth=1)
+bottom.axhline(rbar, linewidth=1.5)
+bottom.axhline(r_ucl, linewidth=1.2, linestyle="--")
+bottom.axhline(r_lcl, linewidth=1.2, linestyle="--")
+bottom.scatter(r_out.index, r_out.values, s=55, zorder=5, marker="s")
+bottom.set_xlabel("subgroup")
+bottom.set_ylabel("subgroup range")
+bottom.set_title("R chart")
+plt.tight_layout()
+
+print()
+print("This process had a mean shift introduced at subgroup 31 and a")
+print("variance increase at subgroup 46. Both charts are needed to see both.")`}
+</PythonCell>
+
+<h2 id="xbar-and-s">x-bar and s</h2>
+
+The range uses only two of the observations in each subgroup — the largest and smallest — and
+throws the rest away. The standard deviation uses all of them, so it is a more efficient estimator
+of spread.
+
+$$
+\bar{s} = \text{mean of subgroup standard deviations}
+$$
+
+$$
+\text{x-bar chart:} \quad \bar{\bar{x}} \pm A_3\bar{s}
+\qquad
+\text{s chart:} \quad UCL = B_4\bar{s},\; LCL = B_3\bar{s}
+$$
+
+The range survives in practice mainly because it can be computed by hand on the shop floor. With
+a computer there is little reason not to use $s$, and for subgroups larger than about 10 the range
+becomes markedly inefficient.
+
+<PythonCell label="x-bar and s, compared with x-bar and R">
+{`standard_deviations = grouped.std(ddof=1)
+sbar = standard_deviations.mean()
+
+s_ucl, s_lcl = k["B4"] * sbar, k["B3"] * sbar
+x_ucl_s, x_lcl_s = xbarbar + k["A3"] * sbar, xbarbar - k["A3"] * sbar
+
+print(f"s chart:      CL {sbar:.4f}   UCL {s_ucl:.4f}   LCL {s_lcl:.4f}")
+print(f"x-bar (s):    CL {xbarbar:.4f}   UCL {x_ucl_s:.4f}   LCL {x_lcl_s:.4f}")
+print(f"x-bar (R):    CL {xbarbar:.4f}   UCL {x_ucl:.4f}   LCL {x_lcl:.4f}")
+
+print()
+print("Two estimates of the process sigma:")
+print(f"  from Rbar/d2  {rbar / k['d2']:.5f}")
+print(f"  from sbar/c4  {sbar / k['c4']:.5f}")
+print(f"  difference    {abs(rbar / k['d2'] - sbar / k['c4']):.5f}")
+
+s_out = standard_deviations[(standard_deviations > s_ucl) | (standard_deviations < s_lcl)]
+x_out_s = xbar[(xbar > x_ucl_s) | (xbar < x_lcl_s)]
+print()
+print(f"s chart out of control:      {list(s_out.index)}")
+print(f"x-bar (from s) out of control: {list(x_out_s.index)}")
+print(f"x-bar (from R) out of control: {list(x_out.index)}")
+
+fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.5, 6), sharex=True)
+top.plot(xbar.index, xbar.values, marker="o", markersize=3.5, linewidth=1)
+top.axhline(xbarbar, linewidth=1.5)
+top.axhline(x_ucl_s, linewidth=1.2, linestyle="--")
+top.axhline(x_lcl_s, linewidth=1.2, linestyle="--")
+top.set_ylabel("subgroup mean")
+top.set_title("x-bar chart, limits from s-bar")
+
+bottom.plot(standard_deviations.index, standard_deviations.values,
+            marker="o", markersize=3.5, linewidth=1)
+bottom.axhline(sbar, linewidth=1.5)
+bottom.axhline(s_ucl, linewidth=1.2, linestyle="--")
+bottom.axhline(s_lcl, linewidth=1.2, linestyle="--")
+bottom.scatter(s_out.index, s_out.values, s=55, zorder=5, marker="s")
+bottom.set_xlabel("subgroup")
+bottom.set_ylabel("subgroup sd")
+bottom.set_title("s chart")
+plt.tight_layout()`}
+</PythonCell>
+
+<h2 id="subgroup-size">Subgroup size</h2>
+
+Subgroup size controls how quickly a shift is detected, through the standard error of the mean:
+
+$$
+\sigma_{\bar{x}} = \frac{\sigma}{\sqrt{n}}
+$$
+
+Larger subgroups give tighter x-bar limits and faster detection, at proportionally more inspection
+cost. The conventional guidance:
+
+- $n = 4$ or $5$ — the standard choice; use the range.
+- $n \ge 10$ — use $s$ rather than $R$; the range is losing too much information.
+- $n = 1$ — no subgroup is possible; use the I-MR chart in the next lesson.
+
+The **average run length** — how many subgroups pass, on average, before a shift is flagged — is
+the honest way to compare designs.
+
+<PythonCell label="Average run length by subgroup size">
+{`from scipy import stats
+
+sigma = rbar / k["d2"]
+
+def average_run_length(shift_in_sigmas, n):
+    """Expected subgroups until an x-bar chart signals, for a given shift."""
+    shift = shift_in_sigmas * np.sqrt(n)          # in units of the mean's SE
+    beta = stats.norm.cdf(3 - shift) - stats.norm.cdf(-3 - shift)
+    return 1 / (1 - beta)
+
+print(f"process sigma estimated at {sigma:.4f}")
+print()
+print(f"{'shift':>8}" + "".join(f"{f'n={n}':>10}" for n in [1, 2, 4, 5, 9, 16]))
+for shift in [0.0, 0.5, 1.0, 1.5, 2.0, 3.0]:
+    row = "".join(f"{average_run_length(shift, n):>10.1f}" for n in [1, 2, 4, 5, 9, 16])
+    label = "none" if shift == 0 else f"{shift:.1f} sd"
+    print(f"{label:>8}{row}")
+
+print()
+print("The 'no shift' row is the false-alarm run length: about 370")
+print("subgroups regardless of n, which is what three-sigma limits buy.")
+print()
+print("A 1-sigma shift takes ~44 subgroups to catch with n=1, but only")
+print("~5 with n=5 and ~2 with n=16. That is the value of subgrouping.")
+
+fig, ax = plt.subplots()
+shifts = np.linspace(0.2, 3, 60)
+for n in [1, 2, 5, 10]:
+    ax.plot(shifts, [average_run_length(s, n) for s in shifts], linewidth=2, label=f"n = {n}")
+ax.set_yscale("log")
+ax.set_xlabel("shift in process sigmas")
+ax.set_ylabel("average run length (subgroups)")
+ax.set_title("Larger subgroups detect small shifts far sooner")
+ax.legend(fontsize=8)
+
+print()
+detected = xbar.index[(xbar > x_ucl) | (xbar < x_lcl)]
+actual_shift = 0.42 / sigma
+print(f"The shift built into this data is {actual_shift:.2f} sigma.")
+print(f"Predicted ARL at n=5: {average_run_length(actual_shift, 5):.1f} subgroups.")
+print(f"Shift began at 31; first out-of-limit point at "
+      f"{detected[detected >= 31][0] if len(detected[detected >= 31]) else 'none'}.")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why must you read the R chart before the x-bar chart?",
+      options: [
+        {
+          text: "The x-bar limits are computed from R̄, so an unstable spread makes those limits meaningless.",
+          correct: true,
+          explanation:
+            "Exactly, and it is the most frequently violated rule in control charting. Establish that the spread is stable, then interpret the centre.",
+        },
+        {
+          text: "Because range shifts are more serious than mean shifts.",
+          explanation:
+            "Neither is inherently more serious. The ordering is about the arithmetic dependency between the two charts.",
+        },
+        {
+          text: "Because the R chart is more sensitive.",
+          explanation:
+            "The x-bar chart is generally more sensitive to mean shifts. The sequencing is about validity, not sensitivity.",
+        },
+      ],
+    },
+    {
+      prompt: "When should you use an s chart rather than an R chart?",
+      options: [
+        {
+          text: "For subgroups of about 10 or more, where the range discards too much information.",
+          correct: true,
+          explanation:
+            "Right. The range uses only the extremes, so its efficiency falls as n grows. With a computer there is little reason to prefer R at any size.",
+        },
+        {
+          text: "When the data is not normally distributed.",
+          explanation:
+            "Both charts assume approximate normality. Switching between them does not address non-normality.",
+        },
+        {
+          text: "When the subgroup size varies.",
+          explanation:
+            "Varying subgroup size is handled by recomputing the constants per subgroup, which applies to both chart types.",
+        },
+      ],
+    },
+    {
+      prompt: "Increasing the subgroup size from 1 to 5 does what to the average run length for a 1-sigma shift?",
+      options: [
+        {
+          text: "Cuts it dramatically — from about 44 subgroups to about 5.",
+          correct: true,
+          explanation:
+            "Correct. The mean's standard error falls as σ/√n, so the same shift is a much larger multiple of the limit width. That is the whole value of subgrouping.",
+        },
+        {
+          text: "Leaves it unchanged, since the limits widen proportionally.",
+          explanation:
+            "The limits narrow, not widen — they are based on the standard error of the mean, which shrinks with √n.",
+        },
+        {
+          text: "Increases it, because larger subgroups average away the signal.",
+          explanation:
+            "Averaging reduces *noise* while preserving a shift in the mean, which is precisely why detection improves.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="398-405" />

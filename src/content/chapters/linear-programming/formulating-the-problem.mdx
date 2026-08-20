@@ -1,0 +1,223 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Identify the decision variables in a resource-allocation problem.</li>
+    <li>Write an objective function and constraints in standard algebraic form.</li>
+    <li>Recognise when a problem is genuinely linear — and when it is not.</li>
+  </ul>
+</Callout>
+
+Everything so far has estimated something about the world. This chapter does something different:
+it **chooses**. Given limited resources and a goal, linear programming finds the best feasible
+plan — not a good one, the provably best one.
+
+The solving is the easy part. The translation from a described situation into algebra is where
+the work and the errors live, so this lesson does only that.
+
+<h2 id="the-scenario">The scenario</h2>
+
+A workshop builds three enclosure lines: **standard**, **deluxe** and **premium**. Each unit
+consumes machining time, assembly time and aluminium, and each earns a different contribution to
+profit.
+
+| | Standard | Deluxe | Premium | Available |
+| --- | --- | --- | --- | --- |
+| Profit per unit | £40 | £68 | £112 | — |
+| Machining hours | 1.2 | 2.0 | 3.2 | 400 |
+| Assembly hours | 0.5 | 1.6 | 2.6 | 300 |
+| Aluminium (kg) | 3.0 | 4.5 | 7.0 | 1,200 |
+
+Two further conditions: a standing contract obliges the workshop to deliver **at least 20**
+standard units, and the market will absorb **at most 60** premium units.
+
+The question: what production plan maximises profit?
+
+Intuition is a poor guide here. Premium earns the most per unit but consumes the most of
+everything; standard is efficient in assembly but weak in profit. Whether a plan is best depends
+on which resource actually runs out first, and that is not something you can eyeball.
+
+<h2 id="decision-variables">Decision variables</h2>
+
+Start by naming what you get to choose. Not what you observe, not what you want — what a decision
+maker can actually set.
+
+$$
+x_1 = \text{standard units}, \quad
+x_2 = \text{deluxe units}, \quad
+x_3 = \text{premium units}
+$$
+
+Two tests for a good set of decision variables: does specifying all their values fully determine
+the plan, and is each one genuinely under your control? Profit is not a decision variable — it is
+a consequence. Available machining hours is not one either — it is a given.
+
+<Callout title="Getting the variables wrong is unrecoverable">
+  <p>
+    Every later step is expressed in terms of these. If they are wrong — too few to describe the
+    plan, or including something you cannot actually set — no amount of correct algebra afterwards
+    will save the formulation. It is worth a minute of thought.
+  </p>
+</Callout>
+
+<h2 id="objective-function">The objective function</h2>
+
+A single linear expression to maximise or minimise:
+
+$$
+\text{maximise } Z = 40x_1 + 68x_2 + 112x_3
+$$
+
+The word **linear** is a real restriction. Each variable appears to the first power, multiplied by
+a constant, and the terms are added. What is *not* allowed:
+
+- $x_1 x_2$ — a term where two decisions interact.
+- $x_1^2$ — increasing or diminishing returns to scale.
+- A per-unit profit that changes with volume, as with a bulk discount.
+
+If your objective genuinely has any of those, this is not a linear program. Some cases can be
+linearised with extra variables; others need nonlinear or mixed-integer programming.
+
+<h2 id="constraints">Constraints and bounds</h2>
+
+Each limited resource becomes one inequality: usage on the left, availability on the right.
+
+$$
+\begin{aligned}
+1.2x_1 + 2.0x_2 + 3.2x_3 &\le 400 && \text{machining hours} \\
+0.5x_1 + 1.6x_2 + 2.6x_3 &\le 300 && \text{assembly hours} \\
+3.0x_1 + 4.5x_2 + 7.0x_3 &\le 1200 && \text{aluminium, kg}
+\end{aligned}
+$$
+
+Bounds on individual variables are handled separately, since solvers treat them more efficiently
+than general constraints:
+
+$$
+x_1 \ge 20, \qquad x_2 \ge 0, \qquad 0 \le x_3 \le 60
+$$
+
+The **non-negativity** conditions are easy to forget and essential — without them the solver will
+cheerfully propose manufacturing a negative number of enclosures to free up capacity.
+
+<PythonCell label="Encoding the formulation">
+{`import numpy as np
+
+products = ["standard", "deluxe", "premium"]
+resources = ["machining (hrs)", "assembly (hrs)", "aluminium (kg)"]
+
+profit = np.array([40.0, 68.0, 112.0])
+
+usage = np.array([
+    [1.2, 2.0, 3.2],     # machining hours per unit
+    [0.5, 1.6, 2.6],     # assembly hours per unit
+    [3.0, 4.5, 7.0],     # aluminium kg per unit
+])
+
+available = np.array([400.0, 300.0, 1200.0])
+bounds = [(20, None), (0, None), (0, 60)]
+
+print("Objective: maximise " +
+      " + ".join(f"{c:g}*x{i+1}" for i, c in enumerate(profit)))
+print()
+print("Subject to:")
+for name, row, limit in zip(resources, usage, available):
+    terms = " + ".join(f"{c:g}*x{i+1}" for i, c in enumerate(row))
+    print(f"  {terms:<32} <= {limit:>7,.0f}   {name}")
+print()
+for i, (low, high) in enumerate(bounds):
+    high_text = "inf" if high is None else str(high)
+    print(f"  {low} <= x{i+1} <= {high_text}")
+
+print()
+print("A sanity check - what if we made only premium units?")
+only_premium = np.array([20.0, 0.0, 60.0])
+used = usage @ only_premium
+for name, amount, limit in zip(resources, used, available):
+    status = "OK" if amount <= limit else "INFEASIBLE"
+    print(f"  {name:<16} uses {amount:>8,.1f} of {limit:>7,.0f}   {status}")
+print(f"  profit {profit @ only_premium:>,.2f}")`}
+</PythonCell>
+
+That last check is worth doing by hand for any formulation: pick an obvious-looking plan, verify
+it satisfies every constraint, and compute its objective. It catches transcription errors
+immediately, and it gives you a floor the optimum must beat.
+
+<Callout title="Fractional answers are a real limitation" variant="warning">
+  <p>
+    Linear programming lets variables take any real value, so the optimal plan may say 48.7
+    standard units. Sometimes that is fine — 48.7 tonnes, 48.7 hours, or a plan repeated weekly.
+    Sometimes it is nonsense, and you need <strong>integer programming</strong>, which is a
+    genuinely harder problem and beyond this course. Rounding an LP solution is <em>not</em> a
+    reliable substitute: the rounded plan can be infeasible or noticeably suboptimal.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Which of these could NOT be a decision variable in this problem?",
+      options: [
+        {
+          text: "Total profit earned.",
+          correct: true,
+          explanation:
+            "Right — profit is the consequence of the decisions, which is exactly what makes it the objective. Decision variables are things you set directly.",
+        },
+        {
+          text: "Number of deluxe units to build.",
+          explanation:
+            "That is a decision variable: under your control, and part of what fully specifies the plan.",
+        },
+        {
+          text: "Number of premium units to build.",
+          explanation:
+            "Also a decision variable, with an upper bound imposed by market demand.",
+        },
+      ],
+    },
+    {
+      prompt: "A supplier offers a bulk discount: aluminium is cheaper beyond 800 kg. What does that do?",
+      options: [
+        {
+          text: "It makes the cost non-linear, so the problem is no longer a plain LP.",
+          correct: true,
+          explanation:
+            "Correct. A per-unit rate that changes with volume breaks linearity. It can often be handled with piecewise-linear modelling and binary indicators — which makes it a mixed-integer program.",
+        },
+        {
+          text: "Nothing — you just use the average price.",
+          explanation:
+            "Averaging assumes you know the final volume, which is what you are solving for. The formulation would be circular.",
+        },
+        {
+          text: "It adds one more constraint.",
+          explanation:
+            "The difficulty is not a missing constraint but the shape of the cost function itself, which is no longer a single linear expression.",
+        },
+      ],
+    },
+    {
+      prompt: "Why are non-negativity conditions essential rather than obvious?",
+      options: [
+        {
+          text: "Without them the solver may propose negative production, which frees up resources and inflates the objective.",
+          correct: true,
+          explanation:
+            "Exactly. The solver has no physical intuition — it optimises the algebra you wrote. Negative production is a perfectly valid solution to an under-specified formulation.",
+        },
+        {
+          text: "Solvers reject any problem without them.",
+          explanation:
+            "Most solvers, including HiGHS, accept variables unbounded below. They will simply use that freedom.",
+        },
+        {
+          text: "They speed up the solve.",
+          explanation:
+            "Bounds do help solvers, but that is a side benefit. They are there because the formulation is wrong without them.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="223-236" />

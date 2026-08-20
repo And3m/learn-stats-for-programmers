@@ -1,0 +1,248 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Define the steady-state distribution and the equation it satisfies.</li>
+    <li>Solve for it directly rather than by iterating.</li>
+    <li>Connect it to the eigenvector interpretation.</li>
+  </ul>
+</Callout>
+
+<h2 id="steady-state">The steady state</h2>
+
+The distribution the chain converges to is the **stationary** or **steady-state** distribution
+$\pi$: the one that, once reached, does not change.
+
+$$
+\pi P = \pi, \qquad \sum_i \pi_i = 1, \qquad \pi_i \ge 0
+$$
+
+The first equation says advancing a step leaves it unchanged. The second and third make it a
+probability distribution — and without the normalisation the equation is satisfied by any scalar
+multiple, including the useless zero vector.
+
+The practical reading: individual customers keep switching every month, but the *proportions* stop
+moving because the flows into each state exactly balance the flows out. Equilibrium here is
+dynamic, not static.
+
+<h2 id="solving-it">Solving for it directly</h2>
+
+Iterating $P$ a few hundred times works, but it is slow, approximate, and fails outright for
+periodic chains. Solving the linear system is exact.
+
+Rearranging $\pi P = \pi$ gives $\pi(P - I) = 0$, a homogeneous system. It is singular by
+construction, so you replace one equation with the normalisation constraint:
+
+$$
+\pi (P - I) = 0 \quad\longrightarrow\quad
+\begin{bmatrix} (P - I)^{\mathsf T} \\ \mathbf{1}^{\mathsf T} \end{bmatrix} \pi^{\mathsf T}
+= \begin{bmatrix} \mathbf{0} \\ 1 \end{bmatrix}
+$$
+
+and solve the resulting least-squares problem.
+
+<PythonCell label="Three routes to the same answer">
+{`import numpy as np
+import pandas as pd
+
+states = ["Brand A", "Brand B", "Brand C"]
+P = np.array([
+    [0.85, 0.10, 0.05],
+    [0.08, 0.82, 0.10],
+    [0.06, 0.12, 0.82],
+])
+
+n = len(states)
+
+# 1. Iterate until it stops moving.
+pi_iterative = np.full(n, 1 / n)
+for step in range(10_000):
+    updated = pi_iterative @ P
+    if np.abs(updated - pi_iterative).sum() < 1e-14:
+        break
+    pi_iterative = updated
+print(f"iteration      converged after {step} steps: {np.round(pi_iterative, 8)}")
+
+# 2. Solve the linear system, replacing one equation with the normalisation.
+A = np.vstack([(P - np.eye(n)).T, np.ones(n)])
+b = np.append(np.zeros(n), 1.0)
+pi_solved, *_ = np.linalg.lstsq(A, b, rcond=None)
+print(f"linear solve   {np.round(pi_solved, 8)}")
+
+# 3. A high power of P - every row is the answer.
+pi_power = np.linalg.matrix_power(P, 500)[0]
+print(f"matrix power   {np.round(pi_power, 8)}")
+
+print()
+print(f"all three agree: {np.allclose(pi_iterative, pi_solved) and np.allclose(pi_solved, pi_power)}")
+
+print()
+print("Long-run market shares:")
+for state, share in zip(states, pi_solved):
+    print(f"  {state:<10}{share:>9.4f}   {'#' * int(share * 90)}")
+
+print()
+print("Verification - advancing the steady state leaves it unchanged:")
+print(f"  pi     {np.round(pi_solved, 10)}")
+print(f"  pi @ P {np.round(pi_solved @ P, 10)}")
+print(f"  maximum difference: {np.abs(pi_solved @ P - pi_solved).max():.2e}")`}
+</PythonCell>
+
+<PythonCell label="Equilibrium means balanced flows, not stillness">
+{`total_customers = 1_000_000
+population = pi_solved * total_customers
+
+print(f"At equilibrium, with {total_customers:,} customers:")
+print()
+print(f"{'state':<10}{'customers':>12}{'leaving':>11}{'arriving':>11}{'net':>9}")
+for i, state in enumerate(states):
+    leaving = population[i] * (1 - P[i, i])
+    arriving = sum(population[j] * P[j, i] for j in range(n) if j != i)
+    print(f"{state:<10}{population[i]:>12,.0f}{leaving:>11,.0f}"
+          f"{arriving:>11,.0f}{arriving - leaving:>9,.0f}")
+
+print()
+churn = sum(population[i] * (1 - P[i, i]) for i in range(n))
+print(f"{churn:,.0f} customers switch brands every month - "
+      f"{churn / total_customers:.1%} of the market.")
+print("The shares are stable; the customers are not.")
+
+print()
+# Mean recurrence time: how long until the chain returns to a state.
+print("Expected months between visits to each state (1 / steady-state share):")
+for state, share in zip(states, pi_solved):
+    print(f"  {state:<10}{1 / share:>9.2f} months")`}
+</PythonCell>
+
+<h2 id="eigenvector-view">The eigenvector view</h2>
+
+Written as $\pi P = \pi$, the steady state is a **left eigenvector of $P$ with eigenvalue 1** —
+equivalently, an eigenvector of $P^{\mathsf T}$ with eigenvalue 1.
+
+Every stochastic matrix has 1 as an eigenvalue, because its rows sum to one. The
+Perron-Frobenius theorem guarantees that for an irreducible chain the corresponding eigenvector is
+unique up to scale and can be chosen non-negative — which is exactly what makes the steady state
+well defined.
+
+The *second-largest* eigenvalue modulus then controls how fast the chain converges. Convergence is
+geometric at rate $|\lambda_2|$: closer to zero means fast mixing, closer to one means slow.
+
+<PythonCell label="Eigenvalues, and the speed of convergence">
+{`eigenvalues, eigenvectors = np.linalg.eig(P.T)
+
+order = np.argsort(-np.abs(eigenvalues))
+eigenvalues = eigenvalues[order]
+eigenvectors = eigenvectors[:, order]
+
+print("Eigenvalues of P^T, by decreasing magnitude:")
+for index, value in enumerate(eigenvalues):
+    print(f"  lambda_{index + 1} = {value.real:>9.6f}   |lambda| = {abs(value):.6f}")
+
+# The eigenvector for eigenvalue 1, normalised to sum to 1.
+principal = np.real(eigenvectors[:, 0])
+principal = principal / principal.sum()
+print()
+print(f"principal eigenvector, normalised: {np.round(principal, 8)}")
+print(f"matches the linear solve: {np.allclose(principal, pi_solved)}")
+
+second = abs(eigenvalues[1])
+print()
+print(f"second-largest |lambda| = {second:.6f}")
+print(f"distance from equilibrium falls by about {1 - second:.1%} per month")
+print(f"half-life of the deviation: {np.log(0.5) / np.log(second):.1f} months")
+
+print()
+print("Observed decay compared with the eigenvalue prediction:")
+current = np.array([1.0, 0.0, 0.0])
+previous_gap = np.abs(current - pi_solved).sum()
+print(f"{'month':>7}{'distance':>12}{'ratio':>10}")
+for month in range(1, 9):
+    current = current @ P
+    gap = np.abs(current - pi_solved).sum()
+    print(f"{month:>7}{gap:>12.6f}{gap / previous_gap:>10.4f}")
+    previous_gap = gap
+print(f"{'':>7}{'':>12}{second:>10.4f}   <- |lambda_2|")`}
+</PythonCell>
+
+The observed ratio settles onto the second eigenvalue, exactly as the theory predicts. That gives
+you a principled answer to "how long until this stabilises?" rather than iterating until the
+numbers stop changing.
+
+<Callout title="When there is no unique steady state" variant="pitfall">
+  <p>
+    A <strong>reducible</strong> chain — one with two groups of states that cannot reach each other
+    — has multiple stationary distributions, and which one you converge to depends on where you
+    started. A <strong>periodic</strong> chain has a stationary distribution that it never actually
+    settles into. Check irreducibility and aperiodicity before quoting a steady state as the
+    long-run answer.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does πP = π need the extra constraint that the entries sum to 1?",
+      options: [
+        {
+          text: "Without it the system is singular, and every scalar multiple of a solution — including zero — satisfies it.",
+          correct: true,
+          explanation:
+            "Exactly. The normalisation both picks out a unique solution and makes it a probability distribution. In code you replace one redundant equation with it.",
+        },
+        {
+          text: "Because P is not invertible.",
+          explanation:
+            "P − I is indeed singular, which is why the homogeneous system has a non-trivial solution at all. The normalisation is what makes that solution unique.",
+        },
+        {
+          text: "To guarantee all entries are non-negative.",
+          explanation:
+            "Non-negativity comes from Perron-Frobenius for an irreducible chain, not from the normalisation, which only fixes the scale.",
+        },
+      ],
+    },
+    {
+      prompt: "At equilibrium, 9% of customers switch brands each month. Is that a contradiction?",
+      options: [
+        {
+          text: "No — equilibrium means the flows balance, not that movement stops.",
+          correct: true,
+          explanation:
+            "Right. Individuals keep moving; the proportions are stable because arrivals into each state exactly offset departures. It is a dynamic equilibrium.",
+        },
+        {
+          text: "Yes — at equilibrium the transition probabilities should be zero off the diagonal.",
+          explanation:
+            "That would describe a chain where nothing ever moves, which is a very different and much less interesting system.",
+        },
+        {
+          text: "Yes — it means the chain has not actually converged.",
+          explanation:
+            "Convergence is a statement about the distribution, and the verification shows πP = π to machine precision. The churn is real and consistent with it.",
+        },
+      ],
+    },
+    {
+      prompt: "What does the second-largest eigenvalue modulus tell you?",
+      options: [
+        {
+          text: "How fast the chain converges — deviations from equilibrium decay geometrically at that rate.",
+          correct: true,
+          explanation:
+            "Correct, and it gives a principled convergence estimate: the half-life of a deviation is log(0.5)/log(|λ₂|), which beats iterating until the numbers look stable.",
+        },
+        {
+          text: "The second-most-likely steady state.",
+          explanation:
+            "There is only one steady state for an irreducible chain. The other eigenvalues govern transient behaviour, not alternative equilibria.",
+        },
+        {
+          text: "The probability of leaving the most common state.",
+          explanation:
+            "That is 1 − P_ii for that state, read straight off the matrix. λ₂ is a global property of the chain's mixing speed.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="307-311" />

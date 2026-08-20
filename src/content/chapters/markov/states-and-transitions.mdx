@@ -1,0 +1,264 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>State the Markov property and judge whether a system plausibly satisfies it.</li>
+    <li>Build a transition matrix and check that it is valid.</li>
+    <li>Advance a state vector one step.</li>
+  </ul>
+</Callout>
+
+Markov analysis models systems that move between a finite set of **states** with fixed
+probabilities. A machine is running, degraded or failed. A customer is active, lapsed or churned.
+A loan is current, delinquent or defaulted.
+
+It answers three questions that come up constantly: where will the system be next, where does it
+settle in the long run, and — if some states are permanent — how long until it gets stuck.
+
+<h2 id="the-setup">The Markov property</h2>
+
+The defining assumption:
+
+$$
+P(X_{t+1} = j \mid X_t = i,\, X_{t-1},\, \ldots,\, X_0) = P(X_{t+1} = j \mid X_t = i)
+$$
+
+In words: **the future depends only on the present, not on the path taken to get there.** Where
+the system was two steps ago carries no additional information once you know where it is now.
+
+This is a strong assumption and often false. A customer who has been active for five years is not
+the same risk as one who became active last month, even though both are in the "active" state.
+When history matters, the standard fix is to enrich the state space — "active, tenure under one
+year" and "active, tenure over one year" as separate states — which restores the Markov property at
+the cost of more states to estimate.
+
+<Callout title="Test the assumption, do not assume it" variant="warning">
+  <p>
+    The Markov property is checkable. Compare the transition rates out of a state for entities that
+    arrived from different places: if customers who reached "at risk" from "active" churn at a
+    different rate than those who reached it from "lapsed", the property fails and the model will
+    misstate long-run behaviour.
+  </p>
+</Callout>
+
+<h2 id="transition-matrix">The transition matrix</h2>
+
+Collect the probabilities into a matrix $P$ where $P_{ij}$ is the probability of moving from state
+$i$ to state $j$ in one step.
+
+Two conditions make a matrix a valid transition matrix, and both should be asserted in code
+rather than assumed:
+
+- Every entry is between 0 and 1.
+- **Every row sums to exactly 1** — from any state, the system must go somewhere, including
+  possibly staying put.
+
+Note it is *rows* that sum to one, not columns. Getting that backwards is the single most common
+implementation error in this chapter, and it produces plausible-looking nonsense rather than an
+obvious failure.
+
+The scenario: three competing subscription services and the monthly movement of customers between
+them.
+
+<PythonCell label="Building and validating the matrix">
+{`import numpy as np
+import pandas as pd
+
+states = ["Brand A", "Brand B", "Brand C"]
+
+# Row i, column j: P(in state j next month | in state i this month)
+P = np.array([
+    [0.85, 0.10, 0.05],
+    [0.08, 0.82, 0.10],
+    [0.06, 0.12, 0.82],
+])
+
+matrix = pd.DataFrame(P, index=states, columns=states)
+print("Transition matrix (rows = from, columns = to):")
+print(matrix.to_string())
+
+print()
+print("Validation:")
+print(f"  all entries in [0, 1]: {bool(((P >= 0) & (P <= 1)).all())}")
+row_sums = P.sum(axis=1)
+print(f"  row sums: {np.round(row_sums, 10)}")
+assert np.allclose(row_sums, 1.0), "rows must sum to 1"
+print("  rows sum to 1: True")
+
+print()
+print("Reading the matrix:")
+for i, source in enumerate(states):
+    stays = P[i, i]
+    leaves = 1 - stays
+    print(f"  {source}: {stays:.0%} stay, {leaves:.0%} leave each month")
+
+print()
+print("Retention is highest for Brand A and lowest for Brand C.")`}
+</PythonCell>
+
+<h2 id="one-step">One step ahead</h2>
+
+The system's state at time $t$ is described by a **state vector** $\pi_t$ — a row vector of
+probabilities, or equivalently market shares, summing to 1.
+
+Advancing one step is a vector-matrix product:
+
+$$
+\pi_{t+1} = \pi_t P
+$$
+
+Each element of the result collects every route into that state:
+
+$$
+\pi_{t+1}(j) = \sum_i \pi_t(i)\, P_{ij}
+$$
+
+That sum is the law of total probability from chapter&nbsp;3, applied across states.
+
+<PythonCell label="Advancing the state vector">
+{`# Current market shares.
+pi = np.array([0.40, 0.35, 0.25])
+print(f"today:      " + "  ".join(f"{s} {v:.4f}" for s, v in zip(states, pi)))
+
+next_month = pi @ P
+print(f"next month: " + "  ".join(f"{s} {v:.4f}" for s, v in zip(states, next_month)))
+
+print()
+print("Where Brand A's share next month comes from:")
+for i, source in enumerate(states):
+    contribution = pi[i] * P[i, 0]
+    print(f"  from {source:<8} {pi[i]:.4f} x {P[i, 0]:.2f} = {contribution:.5f}")
+print(f"  {'total':<13}{next_month[0]:.5f}")
+
+print()
+print(f"shares still sum to 1: {next_month.sum():.10f}")
+
+print()
+print("Six months, one step at a time:")
+current = pi.copy()
+print(f"  month  " + "".join(f"{s:>10}" for s in states))
+print(f"  {0:>5}  " + "".join(f"{v:>10.4f}" for v in current))
+for month in range(1, 7):
+    current = current @ P
+    print(f"  {month:>5}  " + "".join(f"{v:>10.4f}" for v in current))
+
+print()
+print("Brand A is gaining, Brand C is losing - and the changes are")
+print("getting smaller each month. That is the next lesson.")`}
+</PythonCell>
+
+<Callout title="Row vector on the left, or column vector on the right?">
+  <p>
+    This course uses <code>pi @ P</code> with <code>pi</code> as a row vector and rows of{" "}
+    <code>P</code> summing to 1. Much of the physics literature uses the transpose convention:{" "}
+    <code>P @ pi</code> with columns summing to 1. Both are correct; mixing them silently is not.
+    Check the row sums of any matrix you did not build yourself.
+  </p>
+</Callout>
+
+<PythonCell label="Simulating individual customers">
+{`rng = np.random.default_rng(53)
+
+def simulate_path(start, steps, generator):
+    """One customer's journey through the states."""
+    path = [start]
+    current = start
+    for _ in range(steps):
+        current = generator.choice(len(states), p=P[current])
+        path.append(current)
+    return path
+
+print("Five individual customers starting with Brand A, twelve months:")
+for customer in range(5):
+    path = simulate_path(0, 12, rng)
+    print(f"  {customer + 1}: " + " -> ".join(states[s][-1] for s in path))
+
+print()
+# Many simulated customers should reproduce the matrix algebra.
+customers = 100_000
+population = rng.choice(len(states), size=customers, p=pi)
+for _ in range(6):
+    draws = rng.random(customers)
+    cumulative = P.cumsum(axis=1)[population]
+    population = (draws[:, None] > cumulative).sum(axis=1)
+
+simulated = np.array([(population == i).mean() for i in range(len(states))])
+analytic = pi @ np.linalg.matrix_power(P, 6)
+
+print(f"After six months, from {customers:,} simulated customers:")
+print(f"  {'state':<10}{'simulated':>12}{'analytic':>12}")
+for state, sim, exact in zip(states, simulated, analytic):
+    print(f"  {state:<10}{sim:>12.4f}{exact:>12.4f}")
+print()
+print("The matrix algebra is exact; the simulation confirms it. For a chain")
+print("this small, always prefer the algebra.")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does the Markov property assert?",
+      options: [
+        {
+          text: "The next state depends only on the current state, not on how the system got there.",
+          correct: true,
+          explanation:
+            "Right, and it is a strong assumption. When history genuinely matters, the standard remedy is to enrich the state space so that the relevant history is encoded in the state itself.",
+        },
+        {
+          text: "The transition probabilities change over time.",
+          explanation:
+            "That would be a *non*-homogeneous chain. The basic model assumes fixed probabilities, which is a separate assumption from the Markov property.",
+        },
+        {
+          text: "Every state is eventually reachable from every other.",
+          explanation:
+            "That is irreducibility, a different property — and one that fails for absorbing chains, which lesson 11.4 covers.",
+        },
+      ],
+    },
+    {
+      prompt: "In the convention used here, what must sum to 1?",
+      options: [
+        {
+          text: "Each row of the transition matrix.",
+          correct: true,
+          explanation:
+            "Correct — from any state the system must go somewhere. Assert it in code; the transposed convention exists and mixing the two produces plausible-looking nonsense.",
+        },
+        {
+          text: "Each column of the transition matrix.",
+          explanation:
+            "That is the transposed convention used in parts of the physics literature, paired with P @ pi. It is valid, but it is not the one used here.",
+        },
+        {
+          text: "Both rows and columns.",
+          explanation:
+            "A matrix with both is doubly stochastic — a special case that happens to have a uniform steady state. It is not required in general, and this matrix is not one.",
+        },
+      ],
+    },
+    {
+      prompt: "A customer's churn risk depends on how long they have been active. What does that break?",
+      options: [
+        {
+          text: "The Markov property — and the fix is to split 'active' into tenure-based states.",
+          correct: true,
+          explanation:
+            "Exactly. Enriching the state space so the relevant history is encoded in the state restores the property, at the cost of more parameters to estimate.",
+        },
+        {
+          text: "Nothing — tenure is captured by the transition probabilities.",
+          explanation:
+            "A single 'active' state has one row of transition probabilities, so it cannot represent two different churn rates. The information has nowhere to live.",
+        },
+        {
+          text: "The requirement that rows sum to 1.",
+          explanation:
+            "Row sums stay valid regardless. What fails is the assumption that the current state summarises everything relevant.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="295-300" />

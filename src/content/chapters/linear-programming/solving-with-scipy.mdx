@@ -1,0 +1,221 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Convert a maximisation into the minimisation form solvers expect.</li>
+    <li>Call <code>scipy.optimize.linprog</code> correctly.</li>
+    <li>Read the result object and check that the answer is genuinely optimal.</li>
+  </ul>
+</Callout>
+
+<h2 id="standard-form">Standard form</h2>
+
+`scipy.optimize.linprog` solves problems written as
+
+$$
+\min_x c^{\mathsf T}x
+\quad\text{subject to}\quad
+A_{ub}x \le b_{ub},\;\; A_{eq}x = b_{eq},\;\; l \le x \le u
+$$
+
+Two conversions are usually needed, and forgetting either produces a confidently wrong answer.
+
+**Maximisation becomes minimisation.** Minimising $-c^{\mathsf T}x$ gives the same $x$ as
+maximising $c^{\mathsf T}x$. Negate the objective going in and negate `res.fun` coming out.
+
+**Greater-than becomes less-than.** Multiply both sides by $-1$ and flip the sign. A constraint
+$3x_1 + 2x_2 \ge 90$ becomes $-3x_1 - 2x_2 \le -90$. Simple bounds on a single variable should go
+in `bounds` instead, where the solver handles them more efficiently.
+
+<Callout title="PuLP, and why this course uses SciPy">
+  <p>
+    Much LP teaching uses PuLP, whose algebraic syntax is more readable. PuLP is a modelling layer
+    that hands the problem to an external solver binary — usually CBC — and that binary is not
+    available in WebAssembly, so PuLP cannot solve anything in this browser runtime. SciPy's{" "}
+    <code>linprog</code> calls HiGHS, a first-rate open-source solver compiled into SciPy itself.
+    The formulation work is identical; only the syntax differs.
+  </p>
+</Callout>
+
+<h2 id="linprog">Solving with scipy.optimize.linprog</h2>
+
+<PythonCell label="The solve, end to end">
+{`import numpy as np
+from scipy.optimize import linprog
+
+products = ["standard", "deluxe", "premium"]
+resources = ["machining (hrs)", "assembly (hrs)", "aluminium (kg)"]
+
+profit = np.array([40.0, 68.0, 112.0])
+usage = np.array([
+    [1.2, 2.0, 3.2],
+    [0.5, 1.6, 2.6],
+    [3.0, 4.5, 7.0],
+])
+available = np.array([400.0, 300.0, 1200.0])
+bounds = [(20, None), (0, None), (0, 60)]
+
+# Negate the objective: linprog minimises.
+result = linprog(
+    c=-profit,
+    A_ub=usage,
+    b_ub=available,
+    bounds=bounds,
+    method="highs",
+)
+
+print(f"status  {result.status}  ({result.message})")
+print(f"success {result.success}")
+print()
+
+if result.success:
+    plan = result.x
+    print("Optimal production plan:")
+    for name, quantity, unit_profit in zip(products, plan, profit):
+        print(f"  {name:<10} {quantity:>8.2f} units   contributing "
+              f"{quantity * unit_profit:>10,.2f}")
+    print(f"  {'TOTAL':<10} {'':>8}          {-result.fun:>21,.2f}")`}
+</PythonCell>
+
+<h2 id="the-solution">Reading the solution</h2>
+
+The result object carries more than the answer. Four fields matter.
+
+- **`status` and `success`.** Status 0 is optimal. Status 2 means **infeasible** — the constraints
+  contradict each other and no plan satisfies them all. Status 3 means **unbounded** — the
+  objective can grow forever, which almost always means a constraint is missing. Never read `x`
+  without checking this first.
+- **`x`** — the optimal decision variables.
+- **`fun`** — the optimised objective. Negate it back if you negated going in.
+- **`slack`** — for each `A_ub` row, how much of that resource is left over. Zero slack means the
+  constraint is **binding**: that resource ran out, and it is what stopped the objective going
+  higher.
+
+<PythonCell label="Verifying the answer rather than trusting it">
+{`used = usage @ result.x
+
+print(f"{'resource':<18}{'used':>10}{'available':>12}{'slack':>10}   status")
+for name, amount, limit, spare in zip(resources, used, available, result.slack):
+    status = "BINDING" if spare < 1e-6 else "slack"
+    print(f"{name:<18}{amount:>10.2f}{limit:>12,.0f}{spare:>10.2f}   {status}")
+
+print()
+print("Bounds respected:")
+for name, quantity, (low, high) in zip(products, result.x, bounds):
+    high_text = "inf" if high is None else f"{high}"
+    at_bound = ""
+    if abs(quantity - low) < 1e-6:
+        at_bound = "  <- at its lower bound"
+    elif high is not None and abs(quantity - high) < 1e-6:
+        at_bound = "  <- at its upper bound"
+    print(f"  {name:<10} {quantity:>8.2f}   in [{low}, {high_text}]{at_bound}")
+
+print()
+print(f"objective recomputed from x: {profit @ result.x:,.2f}")
+print(f"objective reported by solver: {-result.fun:,.2f}")`}
+</PythonCell>
+
+Two resources are exhausted and one is not; the premium line sits at its market ceiling. That
+combination — some constraints binding, some slack, some variables at their bounds — is the normal
+shape of an LP solution, and each part means something different for what to do next.
+
+<PythonCell label="What infeasible and unbounded look like">
+{`# Infeasible: demand a minimum output the resources cannot support.
+infeasible = linprog(
+    c=-profit,
+    A_ub=usage,
+    b_ub=available,
+    bounds=[(200, None), (100, None), (60, 60)],
+    method="highs",
+)
+print(f"infeasible example -> status {infeasible.status}: {infeasible.message}")
+print("  (the contracted minimums need more machining hours than exist)")
+
+print()
+# Unbounded: remove every constraint and let profit grow forever.
+unbounded = linprog(c=-profit, bounds=[(0, None)] * 3, method="highs")
+print(f"unbounded example  -> status {unbounded.status}: {unbounded.message}")
+print("  (no resource limits, so build infinitely many premium units)")
+
+print()
+print("In practice, status 3 nearly always means a constraint was left out,")
+print("and status 2 means the constraints contradict one another. Both are")
+print("formulation bugs rather than solver failures.")`}
+</PythonCell>
+
+<Callout title="Always check status before reading x" variant="pitfall">
+  <p>
+    On failure, <code>result.x</code> may be <code>None</code> or may contain the last iterate the
+    solver happened to be holding. Code that reads <code>result.x</code> without checking{" "}
+    <code>result.success</code> will silently act on a plan that satisfies nothing.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "You want to maximise profit. What do you pass as c to linprog?",
+      options: [
+        {
+          text: "The negated profit coefficients, then negate result.fun afterwards.",
+          correct: true,
+          explanation:
+            "Right. linprog minimises, and minimising −c·x yields the same x as maximising c·x. Forgetting the second negation gives a correct plan with a nonsensical objective value.",
+        },
+        {
+          text: "The profit coefficients directly — linprog detects the direction.",
+          explanation:
+            "It does not. linprog always minimises, so passing profit directly finds the *least* profitable feasible plan.",
+        },
+        {
+          text: "The reciprocals of the profit coefficients.",
+          explanation:
+            "That would optimise an unrelated objective. Negation is the correct transformation.",
+        },
+      ],
+    },
+    {
+      prompt: "A constraint has zero slack at the optimum. What does that mean?",
+      options: [
+        {
+          text: "It is binding — that resource is fully consumed and is what limits the objective.",
+          correct: true,
+          explanation:
+            "Exactly. Binding constraints are the ones worth relaxing: acquiring more of a slack resource changes nothing at all.",
+        },
+        {
+          text: "The constraint is redundant and could be removed.",
+          explanation:
+            "The opposite. A constraint with *large* slack is doing nothing at the optimum; zero slack means it is actively holding the solution back.",
+        },
+        {
+          text: "The problem is degenerate.",
+          explanation:
+            "Degeneracy is a specific condition involving more binding constraints than variables. Zero slack on its own is completely normal and expected.",
+        },
+      ],
+    },
+    {
+      prompt: "linprog returns status 3, 'unbounded'. What is the most likely cause?",
+      options: [
+        {
+          text: "A constraint is missing, so the objective can grow without limit.",
+          correct: true,
+          explanation:
+            "Correct. Real resource-allocation problems are always bounded by something. Unbounded almost always means a resource limit or a variable bound was omitted.",
+        },
+        {
+          text: "The constraints contradict each other.",
+          explanation:
+            "That is infeasible — status 2. Unbounded is the opposite failure: too much freedom rather than too little.",
+        },
+        {
+          text: "The solver hit its iteration limit.",
+          explanation:
+            "That would report an iteration-limit status. Unbounded is a definite conclusion about the problem, not a give-up.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="236-239" />

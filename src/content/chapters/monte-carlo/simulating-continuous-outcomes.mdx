@@ -1,0 +1,321 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explain why price models work in log returns rather than levels.</li>
+    <li>Estimate drift and volatility from historical data.</li>
+    <li>Simulate many price paths and read the resulting fan honestly.</li>
+  </ul>
+</Callout>
+
+Discrete simulation samples from a list of outcomes. Continuous simulation samples from a
+distribution over a range, and the canonical example — five years of daily closing prices for an
+index — is in `index-prices.csv`.
+
+The point of this lesson is as much about what a simulation **cannot** promise as about how to
+build one.
+
+<h2 id="log-returns">Log returns</h2>
+
+Price models are built on returns, not prices, and on **log** returns specifically:
+
+$$
+r_t = \ln\!\left(\frac{P_t}{P_{t-1}}\right)
+$$
+
+Three reasons.
+
+**They are additive.** The log return over a period is the sum of the log returns within it, so
+multi-day returns are sums rather than products. Simple returns must be compounded.
+
+**They are symmetric.** A simple return of $+50\%$ followed by $-50\%$ leaves you at 75% of where
+you started — the pair does not cancel. In logs, $+0.405$ and $-0.405$ cancel exactly.
+
+**They are closer to normal.** Prices are strictly positive and right-skewed; log returns are
+roughly symmetric and much better behaved, which makes the normal model at least defensible.
+
+A price cannot go below zero, and modelling the logarithm as a random walk enforces that
+automatically.
+
+<PythonCell label="From prices to returns">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+prices = pd.read_csv("index-prices.csv", parse_dates=["date"]).set_index("date")["close"]
+
+print(f"{len(prices)} trading days, "
+      f"{prices.index.min().date()} to {prices.index.max().date()}")
+print(f"first close {prices.iloc[0]:.2f}   last close {prices.iloc[-1]:.2f}")
+print(f"total return {(prices.iloc[-1] / prices.iloc[0] - 1):.2%}")
+
+log_returns = np.log(prices / prices.shift(1)).dropna()
+simple_returns = (prices / prices.shift(1) - 1).dropna()
+
+fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+axes[0].plot(prices.index, prices.values, linewidth=0.8)
+axes[0].set_title("Price - trending, positive only")
+axes[1].plot(log_returns.index, log_returns.values, linewidth=0.4)
+axes[1].set_title("Log returns - stationary-ish")
+axes[2].hist(log_returns, bins=60)
+axes[2].set_title("Roughly symmetric")
+plt.tight_layout()
+
+print()
+print("Additivity check over the whole series:")
+print(f"  sum of log returns        {log_returns.sum():.6f}")
+print(f"  log of the total ratio    {np.log(prices.iloc[-1] / prices.iloc[0]):.6f}")
+print(f"  product of simple returns {np.prod(1 + simple_returns) - 1:.6f}")
+print(f"  exp(sum of log returns)-1 {np.exp(log_returns.sum()) - 1:.6f}")`}
+</PythonCell>
+
+<h2 id="parameters">Drift and volatility</h2>
+
+Two parameters summarise the return series:
+
+$$
+\mu = \text{mean daily log return}, \qquad \sigma = \text{standard deviation of daily log returns}
+$$
+
+Both are conventionally annualised, using 252 trading days:
+
+$$
+\mu_{\text{annual}} = 252\,\mu, \qquad \sigma_{\text{annual}} = \sqrt{252}\,\sigma
+$$
+
+Note the asymmetry: drift scales with time, volatility with its square root. That difference is
+why volatility dominates over short horizons and drift dominates over long ones.
+
+<PythonCell label="Estimating the parameters">
+{`daily_drift = log_returns.mean()
+daily_vol = log_returns.std(ddof=1)
+
+print(f"daily   drift {daily_drift:>10.6f}   volatility {daily_vol:>10.6f}")
+print(f"annual  drift {daily_drift * 252:>10.4f}   volatility "
+      f"{daily_vol * np.sqrt(252):>10.4f}")
+
+print()
+print("Do the returns look normal? Not exactly:")
+from scipy import stats
+print(f"  skew     {stats.skew(log_returns):>8.4f}   (0 for a normal)")
+print(f"  kurtosis {stats.kurtosis(log_returns, fisher=False):>8.4f}   (3 for a normal)")
+statistic, p_value = stats.jarque_bera(log_returns)
+print(f"  Jarque-Bera p {p_value:.2e} -> "
+      f"{'not normal' if p_value < 0.05 else 'consistent with normal'}")
+
+print()
+print("Volatility is not constant either - it clusters:")
+rolling_vol = log_returns.rolling(30).std() * np.sqrt(252)
+by_year = rolling_vol.groupby(rolling_vol.index.year).mean()
+for year, value in by_year.items():
+    print(f"  {year}  annualised vol {value:.4f}  {'#' * int(value * 120)}")
+
+fig, ax = plt.subplots()
+ax.plot(rolling_vol.index, rolling_vol.values, linewidth=1)
+ax.axhline(daily_vol * np.sqrt(252), linewidth=1.5)
+ax.set_ylabel("annualised volatility")
+ax.set_title("30-day rolling volatility - calm periods and turbulent ones")`}
+</PythonCell>
+
+The diagnostics matter. The returns have excess kurtosis — fat tails, meaning extreme days are
+more common than a normal predicts — and volatility clusters in time rather than staying constant.
+Both violate the assumptions of the model we are about to build, and both mean the simulation will
+**understate** extreme outcomes.
+
+<h2 id="simulating-paths">Simulating paths</h2>
+
+Geometric Brownian motion evolves the price as
+
+$$
+P_t = P_{t-1} \exp\left[\left(\mu - \tfrac{\sigma^2}{2}\right)\Delta t + \sigma\,\varepsilon_t\sqrt{\Delta t}\right],
+\qquad \varepsilon_t \sim N(0,1)
+$$
+
+The $-\sigma^2/2$ term is the convexity correction. Without it the *expected price* would exceed
+what the drift implies, because exponentiating a symmetric distribution produces an asymmetric one.
+
+<PythonCell label="A thousand futures">
+{`rng = np.random.default_rng(41)
+
+horizon = 252            # one trading year ahead
+paths = 5_000
+start = prices.iloc[-1]
+
+shocks = rng.normal(
+    loc=daily_drift - 0.5 * daily_vol ** 2,
+    scale=daily_vol,
+    size=(paths, horizon),
+)
+simulated = start * np.exp(np.cumsum(shocks, axis=1))
+final = simulated[:, -1]
+
+print(f"starting price {start:,.2f}, simulating {paths:,} paths {horizon} days ahead")
+print()
+print(f"  mean final price    {final.mean():>10,.2f}")
+print(f"  median final price  {np.median(final):>10,.2f}   <- below the mean; the")
+print(f"                                     distribution is right-skewed")
+print(f"  5th percentile      {np.percentile(final, 5):>10,.2f}")
+print(f"  95th percentile     {np.percentile(final, 95):>10,.2f}")
+print()
+print(f"  P(price ends lower than today) {np.mean(final < start):>7.2%}")
+print(f"  P(price gains more than 20%)   {np.mean(final > start * 1.2):>7.2%}")
+print(f"  P(price falls more than 20%)   {np.mean(final < start * 0.8):>7.2%}")
+
+drawdown = simulated.min(axis=1) / start - 1
+print(f"  median worst drawdown along the path {np.median(drawdown):>7.2%}")
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.8))
+days = np.arange(1, horizon + 1)
+for row in simulated[:120]:
+    left.plot(days, row, linewidth=0.4, alpha=0.5)
+for percentile, width in [(5, 1.5), (50, 2.5), (95, 1.5)]:
+    left.plot(days, np.percentile(simulated, percentile, axis=0), linewidth=width)
+left.set_xlabel("trading days ahead")
+left.set_ylabel("price")
+left.set_title("120 sample paths, with the 5/50/95 fan")
+
+right.hist(final, bins=60)
+right.axvline(start, linewidth=2)
+right.set_xlabel("price after one year")
+right.set_title("The distribution of outcomes")
+plt.tight_layout()`}
+</PythonCell>
+
+<h2 id="reading-the-fan">Reading the fan honestly</h2>
+
+The fan chart is the most seductive image in quantitative finance, and it is routinely
+over-interpreted. What it does and does not say:
+
+**It says**: *if* returns are independent and normally distributed with the drift and volatility
+estimated from this history, and *if* those parameters stay constant, then this is the range of
+outcomes.
+
+**It does not say** anything about what will actually happen, because every one of those
+conditions is false to some degree.
+
+The specific failures, all visible in the diagnostics above:
+
+- **Returns are not normal.** The observed excess kurtosis means real extreme days are more common
+  than the model generates, so the tails of the fan are too thin.
+- **Volatility is not constant.** It clusters, so real paths have calm stretches and violent ones
+  rather than uniform noise.
+- **Parameters are estimates.** The drift in particular is estimated with enormous uncertainty —
+  far more than most people realise.
+
+<PythonCell label="How badly is the drift known?">
+{`n = len(log_returns)
+drift_se = daily_vol / np.sqrt(n)
+
+print(f"daily drift estimate {daily_drift:.6f}  +/- {1.96 * drift_se:.6f}  (95%)")
+print(f"annualised:          {daily_drift * 252:.4f}  "
+      f"[{(daily_drift - 1.96 * drift_se) * 252:.4f}, "
+      f"{(daily_drift + 1.96 * drift_se) * 252:.4f}]")
+print()
+print("That interval spans both solidly positive and negative annual drift,")
+print("from five years of daily data. Volatility is estimated far more")
+print("precisely than drift - which is why risk models are more trustworthy")
+print("than return forecasts.")
+
+print()
+print("What the fan looks like under the interval's endpoints:")
+for label, drift in [
+    ("lower bound", daily_drift - 1.96 * drift_se),
+    ("point estimate", daily_drift),
+    ("upper bound", daily_drift + 1.96 * drift_se),
+]:
+    shocks = rng.normal(drift - 0.5 * daily_vol ** 2, daily_vol, size=(3_000, horizon))
+    ends = start * np.exp(np.cumsum(shocks, axis=1))[:, -1]
+    print(f"  {label:<15} median {np.median(ends):>9,.2f}   "
+          f"P(loss) {np.mean(ends < start):>6.2%}")
+
+print()
+# Bootstrapping from the actual returns keeps the real fat tails.
+bootstrap = rng.choice(log_returns.values, size=(paths, horizon), replace=True)
+bootstrap_final = start * np.exp(bootstrap.sum(axis=1))
+print("Bootstrapping the historical returns instead of assuming normality:")
+print(f"  normal model  5th pct {np.percentile(final, 5):>9,.2f}   "
+      f"1st pct {np.percentile(final, 1):>9,.2f}")
+print(f"  bootstrapped  5th pct {np.percentile(bootstrap_final, 5):>9,.2f}   "
+      f"1st pct {np.percentile(bootstrap_final, 1):>9,.2f}")
+print("  The bootstrap keeps the observed fat tails and gives a worse")
+print("  extreme case - which is the more honest one.")`}
+</PythonCell>
+
+<Callout title="This is not investment advice" variant="pitfall">
+  <p>
+    This lesson uses synthetic price data to demonstrate a simulation technique. Real financial
+    decisions require far more than a geometric Brownian motion fitted to five years of history —
+    and the confidence interval on the drift above should make clear how little a price history
+    tells you about future returns. Nothing here is a recommendation about any asset.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why model log returns rather than simple returns?",
+      options: [
+        {
+          text: "They are additive over time, symmetric, and closer to normal.",
+          correct: true,
+          explanation:
+            "All three, and the additivity is the most practically useful: multi-period returns become sums, so the central limit theorem applies and cumulative sums generate paths directly.",
+        },
+        {
+          text: "Because simple returns can be negative.",
+          explanation:
+            "Log returns can be negative too. The advantages are additivity, symmetry and distributional shape.",
+        },
+        {
+          text: "Because log returns are always smaller in magnitude.",
+          explanation:
+            "For small returns the two are nearly identical, and the difference grows in a specific direction — but magnitude is not why the transform is used.",
+        },
+      ],
+    },
+    {
+      prompt: "The simulated log returns have excess kurtosis of about 1. What does that imply about the fan?",
+      options: [
+        {
+          text: "Real extreme outcomes are more likely than the normal model generates, so the fan's tails are too thin.",
+          correct: true,
+          explanation:
+            "Correct, and it is the standard criticism of Gaussian price models. Bootstrapping actual historical returns, as the last cell does, preserves the observed tails.",
+        },
+        {
+          text: "The simulation will overstate the probability of extreme moves.",
+          explanation:
+            "The opposite. Fat-tailed reality against a thin-tailed model means the simulation understates extremes.",
+        },
+        {
+          text: "The drift estimate is biased.",
+          explanation:
+            "Kurtosis concerns the shape of the tails, not the centre. The drift's problem is imprecision, not bias.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "Five years of daily data give an annualised drift whose 95% interval spans negative to positive values. What does that tell you?",
+      options: [
+        {
+          text: "Expected returns are estimated very imprecisely — far less reliably than volatility.",
+          correct: true,
+          explanation:
+            "Exactly, and it is a genuinely important asymmetry. Drift's standard error shrinks only with the length of the history, while volatility can be estimated well from a short window. Risk models are more trustworthy than return forecasts.",
+        },
+        {
+          text: "The data must be corrupted.",
+          explanation:
+            "It is a normal and well-known property of financial return series. Even decades of data leave the mean return poorly pinned down.",
+        },
+        {
+          text: "You should use a longer horizon in the simulation.",
+          explanation:
+            "A longer horizon compounds the drift uncertainty rather than resolving it. The imprecision is in the estimate, not the projection.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="259-270" />

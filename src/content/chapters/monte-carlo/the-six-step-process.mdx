@@ -1,0 +1,227 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Follow the six-step Monte Carlo procedure end to end.</li>
+    <li>Build a cumulative distribution and map random numbers onto outcomes.</li>
+    <li>Understand what the vectorised version is doing underneath.</li>
+  </ul>
+</Callout>
+
+Before automating anything it is worth doing one pass by hand, because the manual version makes
+the mechanism obvious and the automated version then reads as an optimisation rather than a
+mystery.
+
+<h2 id="the-steps">The six steps</h2>
+
+1. **Establish a probability distribution** for each uncertain input.
+2. **Build the cumulative distribution** for each.
+3. **Assign an interval of random numbers** to each outcome, sized by its probability.
+4. **Generate random numbers.**
+5. **Simulate a series of trials**, mapping each random number to an outcome.
+6. **Analyse the results.**
+
+Steps 2 and 3 look like historical curiosities — they exist because the method predates computers,
+when trials were run with a table of random digits. They are worth understanding anyway, because
+they are precisely what `np.random.choice` does internally, and knowing that removes the magic.
+
+<h2 id="by-hand">One pass by hand</h2>
+
+The scenario: a workshop's daily demand for a spare part, observed over 200 days.
+
+<PythonCell label="Steps 1 to 3: distribution, cumulative, intervals">
+{`import numpy as np
+import pandas as pd
+
+# Step 1 - the empirical distribution of daily demand.
+demand_values = np.array([0, 1, 2, 3, 4, 5])
+observed_days = np.array([20, 40, 60, 44, 26, 10])
+
+probability = observed_days / observed_days.sum()
+
+# Step 2 - the cumulative distribution.
+cumulative = np.cumsum(probability)
+
+# Step 3 - a random-number interval per outcome, sized by its probability.
+lower = np.concatenate([[0.0], cumulative[:-1]])
+
+table = pd.DataFrame({
+    "demand": demand_values,
+    "days": observed_days,
+    "probability": probability.round(3),
+    "cumulative": cumulative.round(3),
+    "interval": [f"[{lo:.3f}, {hi:.3f})" for lo, hi in zip(lower, cumulative)],
+})
+print(table.to_string(index=False))
+
+print()
+print(f"total days observed: {observed_days.sum()}")
+print(f"probabilities sum to: {probability.sum():.10f}")
+print(f"expected demand: {(demand_values * probability).sum():.4f} units/day")
+
+print()
+print("Each interval's WIDTH equals that outcome's probability. A uniform")
+print("random number lands in each interval exactly as often as the outcome")
+print("should occur. That is the whole trick.")`}
+</PythonCell>
+
+<h2 id="intervals">Random-number intervals</h2>
+
+The mapping in step 3 is **inverse transform sampling**. Draw $u$ uniformly from $[0,1)$ and
+return the smallest outcome whose cumulative probability exceeds $u$:
+
+$$
+X = F^{-1}(u), \qquad u \sim \text{Uniform}(0,1)
+$$
+
+Because the interval assigned to each outcome has width equal to its probability, a uniform draw
+selects each outcome at exactly the right rate. The same idea works for continuous distributions —
+it is how `scipy.stats.<dist>.ppf(u)` generates samples.
+
+<PythonCell label="Steps 4 and 5: draw, map, and repeat">
+{`rng = np.random.default_rng(23)
+
+def sample_demand(u):
+    """Inverse transform: map a uniform draw to a demand value."""
+    return demand_values[np.searchsorted(cumulative, u, side="right")]
+
+# Step 4 - generate random numbers.
+draws = rng.random(20)
+
+# Step 5 - one trial per draw, done visibly.
+print("Twenty trials, spelled out:")
+print(f"{'trial':>6}{'random':>10}{'demand':>9}")
+for trial, u in enumerate(draws, start=1):
+    print(f"{trial:>6}{u:>10.4f}{sample_demand(u):>9d}")
+
+manual = np.array([sample_demand(u) for u in draws])
+print()
+print(f"mean demand over 20 trials: {manual.mean():.3f}  "
+      f"(true expectation {(demand_values * probability).sum():.3f})")
+print("Twenty trials is not many. The next cell runs a hundred thousand.")`}
+</PythonCell>
+
+<h2 id="analysing">Step 6, and the vectorised version</h2>
+
+Once the mechanism is clear, the loop disappears. NumPy generates all the draws at once and maps
+them in a single operation, which is both far faster and far shorter.
+
+<PythonCell label="The same simulation, vectorised">
+{`trials = 100_000
+
+# The manual route, vectorised: uniform draws through the inverse CDF.
+u = rng.random(trials)
+by_hand = demand_values[np.searchsorted(cumulative, u, side="right")]
+
+# What np.random.choice does for you - the identical computation.
+built_in = rng.choice(demand_values, size=trials, p=probability)
+
+print(f"{'demand':>8}{'expected %':>13}{'inverse CDF %':>16}{'choice() %':>13}")
+for value, p in zip(demand_values, probability):
+    print(f"{value:>8}{p * 100:>13.2f}"
+          f"{(by_hand == value).mean() * 100:>16.2f}"
+          f"{(built_in == value).mean() * 100:>13.2f}")
+
+print()
+print(f"mean:  expected {(demand_values * probability).sum():.4f}   "
+      f"simulated {by_hand.mean():.4f}")
+print(f"sd:    expected "
+      f"{np.sqrt((probability * (demand_values - (demand_values * probability).sum()) ** 2).sum()):.4f}   "
+      f"simulated {by_hand.std(ddof=1):.4f}")
+
+print()
+# Step 6 proper: the questions a distribution can answer that a mean cannot.
+print("Questions an average could not have answered:")
+print(f"  P(demand = 0)      {(by_hand == 0).mean():.4f}")
+print(f"  P(demand >= 4)     {(by_hand >= 4).mean():.4f}")
+print(f"  95th percentile    {np.percentile(by_hand, 95):.0f} units")
+print()
+weekly = by_hand[: (trials // 7) * 7].reshape(-1, 7).sum(axis=1)
+print(f"Weekly demand (7 days summed), from {len(weekly):,} simulated weeks:")
+print(f"  mean {weekly.mean():.2f}   sd {weekly.std(ddof=1):.2f}")
+print(f"  a stock of {np.percentile(weekly, 95):.0f} units covers 95% of weeks")
+print(f"  a stock of {np.percentile(weekly, 99):.0f} units covers 99% of weeks")`}
+</PythonCell>
+
+The weekly figure is the point of the whole exercise. Expected demand is a little over two units a
+day, so a week averages about fifteen — but stocking fifteen leaves you short roughly half the
+time. The distribution tells you what the mean cannot, and that gap is why service-level decisions
+are made from simulations rather than averages.
+
+<Callout title="Set a seed, and say so">
+  <p>
+    <code>np.random.default_rng(23)</code> makes a simulation reproducible: the same seed gives the
+    same answer, so a colleague can verify your numbers. Report the seed alongside the results, and
+    re-run with several different seeds before believing anything — if your conclusion changes with
+    the seed, you have not run enough trials.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why is each outcome's random-number interval sized to equal its probability?",
+      options: [
+        {
+          text: "So that a uniform draw lands in each interval at exactly the outcome's rate.",
+          correct: true,
+          explanation:
+            "Exactly — this is inverse transform sampling, and it is what np.random.choice does internally. Interval width equals probability, so uniform draws reproduce the distribution.",
+        },
+        {
+          text: "To keep the intervals from overlapping.",
+          explanation:
+            "Non-overlap follows from using the cumulative distribution, but it does not require the widths to match the probabilities. The width is what makes the frequencies correct.",
+        },
+        {
+          text: "Because random number generators produce values between 0 and 1.",
+          explanation:
+            "True, and convenient, but it does not explain the sizing. You could map [0,1) onto equal-width intervals — and you would get a uniform distribution, not the one you wanted.",
+        },
+      ],
+    },
+    {
+      prompt: "Expected daily demand is about 2.2 units. Why is stocking 15 units for a week insufficient?",
+      options: [
+        {
+          text: "The mean is the centre of the weekly distribution, so roughly half of weeks exceed it.",
+          correct: true,
+          explanation:
+            "Right. Service-level decisions need a percentile, not a mean — which is exactly the kind of question simulation answers and averages hide.",
+        },
+        {
+          text: "Because demand is systematically underestimated by the historical data.",
+          explanation:
+            "Nothing here suggests bias in the data. The issue is using a central measure where a tail measure is required.",
+        },
+        {
+          text: "Because weekly demand is not the sum of seven daily demands.",
+          explanation:
+            "It is exactly that, under the independence assumed here. The point is about the spread of that sum, not its definition.",
+        },
+      ],
+    },
+    {
+      prompt: "You re-run a simulation with a different seed and the conclusion changes. What does that mean?",
+      options: [
+        {
+          text: "You have not run enough trials — the Monte Carlo error is larger than the effect you are claiming.",
+          correct: true,
+          explanation:
+            "Correct, and it is the reason to check several seeds routinely. A conclusion that survives only one seed is a conclusion about that seed.",
+        },
+        {
+          text: "The random number generator is faulty.",
+          explanation:
+            "Different seeds are *supposed* to give different sequences. The problem is that your estimate is too noisy for the claim you want to make.",
+        },
+        {
+          text: "The model is wrong.",
+          explanation:
+            "Possibly, but seed sensitivity specifically indicates insufficient trials. Increase n and see whether the instability disappears before questioning the model.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="244-255" />

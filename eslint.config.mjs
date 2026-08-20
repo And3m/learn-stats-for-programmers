@@ -1,17 +1,23 @@
-import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
-import { FlatCompat } from "@eslint/eslintrc";
+import coreWebVitals from "eslint-config-next/core-web-vitals";
+import typescript from "eslint-config-next/typescript";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-const compat = new FlatCompat({ baseDirectory: __dirname });
-
+/**
+ * eslint-config-next 16 ships native flat configs, so no FlatCompat wrapper is
+ * needed — and with ESLint 9.39 the compat path fails outright.
+ */
 const eslintConfig = [
   {
-    ignores: [".next/**", "out/**", "node_modules/**", "next-env.d.ts", ".pyodide-cache/**"],
+    ignores: [
+      ".next/**",
+      "out/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      ".pyodide-cache/**",
+      "public/pyodide-worker.js",
+    ],
   },
-  ...compat.extends("next/core-web-vitals", "next/typescript"),
+  ...coreWebVitals,
+  ...typescript,
   {
     rules: {
       "@typescript-eslint/no-unused-vars": [

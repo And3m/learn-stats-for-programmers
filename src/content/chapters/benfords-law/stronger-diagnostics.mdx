@@ -1,0 +1,282 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Compute the distortion factor and say which direction values were shifted.</li>
+    <li>Use a per-digit z-statistic to localise an anomaly.</li>
+    <li>Apply mantissa statistics as a compact overall check.</li>
+  </ul>
+</Callout>
+
+Chi-square and MAD answer "does this conform?" These three answer more useful questions: *in which
+direction* were the numbers moved, *which digit* is responsible, and *does the whole distribution*
+hold together.
+
+<h2 id="distortion-factor">The distortion factor</h2>
+
+The distortion factor compares the mean of the observed data against the mean expected under
+Benford, after collapsing every value onto a common scale.
+
+Each value is first mapped to the range $[10, 100)$ by dividing by the appropriate power of ten.
+Under Benford, the expected mean of those collapsed values is
+
+$$
+\bar{X}_{\text{expected}} = \frac{90}{\ln(10)\,\cdot\,\text{(number of decades)}} \approx 39.0865
+$$
+
+and the distortion factor is the relative deviation:
+
+$$
+DF = \frac{\bar{X}_{\text{observed}} - \bar{X}_{\text{expected}}}{\bar{X}_{\text{expected}}} \times 100
+$$
+
+The **sign carries the information**:
+
+- **Negative** — the observed values are smaller than expected. Consistent with amounts being
+  shaved downward, or held under a threshold.
+- **Positive** — larger than expected. Consistent with inflated claims.
+
+<PythonCell label="Distortion factor, overall and by vendor">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+
+payments = pd.read_csv("payments.csv")
+digits = np.arange(1, 10)
+benford = np.log10(1 + 1 / digits)
+
+# Mean of a Benford-distributed value collapsed into [10, 100): 90 / ln(10).
+EXPECTED_MEAN = 90 / np.log(10)
+
+def collapse(values):
+    """Map every value into [10, 100)."""
+    values = np.abs(np.asarray(values, dtype=float))
+    values = values[values > 0]
+    return values / 10 ** (np.floor(np.log10(values)) - 1)
+
+def distortion_factor(values):
+    collapsed = collapse(values)
+    return (collapsed.mean() - EXPECTED_MEAN) / EXPECTED_MEAN * 100
+
+amounts = payments["amount"].to_numpy()
+overall = distortion_factor(amounts)
+
+print(f"expected mean of collapsed values  {EXPECTED_MEAN:.5f}")
+print(f"observed mean                      {collapse(amounts).mean():.5f}")
+print(f"distortion factor                  {overall:+.4f}%")
+print()
+direction = "SMALLER" if overall < 0 else "LARGER"
+print(f"The amounts are {direction} than Benford expects.")
+
+print()
+print(f"{'vendor':<22}{'n':>6}{'DF %':>10}   direction")
+for vendor, group in payments.groupby("vendor"):
+    values = group["amount"].to_numpy()
+    if len(values) < 50:
+        continue
+    df = distortion_factor(values)
+    print(f"{vendor:<22}{len(values):>6}{df:>+10.3f}   "
+          f"{'shaved down' if df < -1 else 'inflated' if df > 1 else 'unremarkable'}")
+
+# A reference distribution, to know what 'unremarkable' looks like.
+rng = np.random.default_rng(12)
+null = np.array([distortion_factor(10 ** (rng.random(300) * 4 + 1)) for _ in range(3000)])
+print()
+print(f"Under conformity with n = 300, DF has sd {null.std():.3f}% "
+      f"and a 95% range of [{np.percentile(null, 2.5):+.2f}, {np.percentile(null, 97.5):+.2f}]")`}
+</PythonCell>
+
+<h2 id="z-statistic">The z-statistic per digit</h2>
+
+Chi-square gives one number for all nine digits. A per-digit z-statistic tells you exactly which
+digit is out of line, and by how many standard errors:
+
+$$
+z_d = \frac{\left| p_d^{\text{obs}} - p_d^{\text{exp}} \right| - \frac{1}{2n}}
+            {\sqrt{\dfrac{p_d^{\text{exp}}\left(1 - p_d^{\text{exp}}\right)}{n}}}
+$$
+
+The $1/(2n)$ term is a continuity correction, applied only when it is smaller than the numerator's
+absolute difference. Values above 1.96 are significant at 5%, above 2.58 at 1%.
+
+<PythonCell label="Localising the anomaly">
+{`def digit_z_scores(values):
+    values = np.abs(np.asarray(values, dtype=float))
+    values = values[values > 0]
+    lead = (values / 10 ** np.floor(np.log10(values))).astype(int)
+    n = len(values)
+    observed = np.array([(lead == d).mean() for d in digits])
+
+    difference = np.abs(observed - benford)
+    correction = np.where(difference > 1 / (2 * n), 1 / (2 * n), 0.0)
+    standard_error = np.sqrt(benford * (1 - benford) / n)
+    return observed, (difference - correction) / standard_error
+
+observed, z_scores = digit_z_scores(amounts)
+
+print(f"n = {len(amounts):,}")
+print(f"{'digit':>6}{'observed':>11}{'expected':>11}{'z':>9}   significance")
+for digit, obs, exp, z in zip(digits, observed, benford, z_scores):
+    stars = "***" if z > 2.58 else "**" if z > 1.96 else ""
+    direction = "over" if obs > exp else "under"
+    print(f"{digit:>6}{obs:>11.4f}{exp:>11.4f}{z:>9.3f}   "
+          f"{direction}-represented {stars}")
+
+print()
+print("** significant at 5%, *** at 1%")
+
+fig, ax = plt.subplots()
+colours = ["#c64600" if z > 1.96 else "#1a5fb4" for z in z_scores]
+ax.bar(digits, z_scores, color=colours)
+ax.axhline(1.96, linewidth=1, linestyle="--")
+ax.axhline(2.58, linewidth=1, linestyle=":")
+ax.set_xticks(digits)
+ax.set_xlabel("leading digit")
+ax.set_ylabel("z-statistic")
+ax.set_title("Digit 9 is the anomaly; the rest are unremarkable")
+
+print()
+print("Chi-square said 'something is wrong'. The z-statistics say")
+print("'digit 9, specifically' - which is what turns a statistic into a lead.")`}
+</PythonCell>
+
+<h2 id="mantissa-stats">Mantissa statistics</h2>
+
+The most compact overall check. Benford conformity is exactly equivalent to the **mantissa** — the
+fractional part of $\log_{10}$ — being uniform on $[0,1)$. A uniform distribution has known moments:
+
+| Statistic | Expected under Benford |
+| --- | --- |
+| Mean | 0.5 |
+| Variance | 1/12 ≈ 0.08333 |
+| Skewness | 0 |
+| Kurtosis (excess) | −1.2 |
+
+Comparing the observed moments against these tests the whole distribution at once, rather than
+only its first digit — which makes it sensitive to distortions that the first-digit test misses
+entirely.
+
+<PythonCell label="Mantissa moments, and the arc test">
+{`def mantissa_report(values, label):
+    values = np.abs(np.asarray(values, dtype=float))
+    values = values[values > 0]
+    mantissa = np.log10(values) % 1
+
+    print(f"{label}  (n = {len(values):,})")
+    print(f"  {'mean':<12}{mantissa.mean():>10.5f}   expected 0.50000")
+    print(f"  {'variance':<12}{mantissa.var():>10.5f}   expected 0.08333")
+    print(f"  {'skewness':<12}{stats.skew(mantissa):>10.5f}   expected 0.00000")
+    print(f"  {'ex. kurtosis':<12}{stats.kurtosis(mantissa):>10.5f}   expected -1.20000")
+
+    uniformity = stats.kstest(mantissa, "uniform")
+    print(f"  Kolmogorov-Smirnov against uniform: "
+          f"D = {uniformity.statistic:.5f}, p = {uniformity.pvalue:.3e}")
+    print(f"  -> {'NOT uniform' if uniformity.pvalue < 0.05 else 'consistent with uniform'}")
+    return mantissa
+
+overall_mantissa = mantissa_report(amounts, "All payments")
+print()
+suspect = "Ember IT"
+clean = payments[payments["vendor"] != suspect]["amount"].to_numpy()
+suspect_amounts = payments[payments["vendor"] == suspect]["amount"].to_numpy()
+
+mantissa_report(clean, f"All vendors except {suspect}")
+print()
+suspect_mantissa = mantissa_report(suspect_amounts, suspect)
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.6))
+left.hist(np.log10(clean) % 1, bins=40, density=True)
+left.axhline(1.0, linewidth=2)
+left.set_title(f"Mantissa, excluding {suspect}")
+left.set_xlabel("fractional part of log10")
+
+right.hist(suspect_mantissa, bins=40, density=True)
+right.axhline(1.0, linewidth=2)
+right.set_title(f"Mantissa, {suspect} only")
+right.set_xlabel("fractional part of log10")
+plt.tight_layout()
+
+print()
+print("Removing one vendor restores conformity. That is the whole finding,")
+print("and it took four diagnostics to isolate it from 2,400 rows.")`}
+</PythonCell>
+
+<Callout title="Use the diagnostics together" variant="warning">
+  <p>
+    No single statistic settles anything. Chi-square detects that a deviation exists, MAD says
+    whether it is large enough to matter, the z-statistics say which digit, the distortion factor
+    says in which direction, and the mantissa test checks the whole distribution rather than just
+    the first digit. Used together they narrowed 2,400 payments to one vendor and one threshold.
+    Used alone, any of them could have misled.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "A dataset has a distortion factor of −3.8%. What does the sign indicate?",
+      options: [
+        {
+          text: "The values are smaller than Benford expects — consistent with amounts being shaved down or kept under a threshold.",
+          correct: true,
+          explanation:
+            "Right. The sign is what makes DF more informative than chi-square or MAD, both of which are direction-blind. It still needs corroborating, but it points the investigation.",
+        },
+        {
+          text: "The values are larger than expected.",
+          explanation:
+            "That would be a positive distortion factor, consistent with inflation rather than suppression.",
+        },
+        {
+          text: "The data conforms, since the deviation is under 5%.",
+          explanation:
+            "There is no 5% rule for DF. Judge it against a reference distribution at your sample size — the lesson simulates one for exactly this reason.",
+        },
+      ],
+    },
+    {
+      prompt: "What do mantissa statistics test that a first-digit test does not?",
+      options: [
+        {
+          text: "The whole distribution of magnitudes, not just the first digit.",
+          correct: true,
+          explanation:
+            "Exactly. Benford conformity is equivalent to a uniform mantissa, so testing its moments checks the entire logarithmic spread and catches distortions the first digit misses.",
+        },
+        {
+          text: "Whether the sample size is large enough.",
+          explanation:
+            "Sample adequacy is a separate consideration. Mantissa statistics test distributional shape.",
+        },
+        {
+          text: "Whether the data is normally distributed.",
+          explanation:
+            "The reference distribution is uniform, not normal — the mantissa should be uniform on [0,1) under Benford.",
+        },
+      ],
+    },
+    {
+      prompt: "Why compute per-digit z-statistics when you already have a chi-square result?",
+      options: [
+        {
+          text: "Chi-square gives one number for all nine digits; z-statistics identify which digit is anomalous.",
+          correct: true,
+          explanation:
+            "Right, and that localisation is what turns 'something is wrong' into 'digit 9, specifically' — the step that made it possible to trace the anomaly to one vendor and one threshold.",
+        },
+        {
+          text: "Because z-statistics are unaffected by sample size.",
+          explanation:
+            "They very much depend on n — n appears in the standard error. MAD is the size-independent measure.",
+        },
+        {
+          text: "Because chi-square is unreliable for count data.",
+          explanation:
+            "Count data is exactly what chi-square goodness-of-fit is designed for. The limitation is granularity, not validity.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="343-348" />

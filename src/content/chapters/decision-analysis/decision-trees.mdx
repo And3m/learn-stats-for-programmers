@@ -1,0 +1,330 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Distinguish decision nodes from chance nodes.</li>
+    <li>Evaluate a tree by rolling back from the leaves.</li>
+    <li>Compute the value of imperfect information.</li>
+  </ul>
+</Callout>
+
+A payoff table handles one decision. Real problems are often **sequential**: decide something now,
+observe an outcome, then decide again with what you have learned. A decision tree is the structure
+for that, and rolling it back is the method.
+
+<h2 id="the-schema">Nodes and branches</h2>
+
+Two kinds of internal node, and the distinction is the entire point:
+
+- **Decision nodes** (drawn as squares) — branches you choose between. At a decision node you take
+  the **maximum**, because you get to pick.
+- **Chance nodes** (drawn as circles) — branches nature chooses between, with probabilities. At a
+  chance node you take the **probability-weighted average**, because you do not.
+
+Leaves carry payoffs. Branches out of a chance node must have probabilities summing to one.
+
+The extended scenario: before committing to an expansion, the manufacturer can commission a market
+study costing £15,000. The study reports "favourable" or "unfavourable", imperfectly, and its
+verdict revises the probabilities of each demand state.
+
+<PythonCell label="The study's reliability, and Bayes">
+{`import numpy as np
+import pandas as pd
+
+alternatives = ["do nothing", "small expansion", "medium expansion", "large expansion"]
+states = ["low demand", "moderate demand", "high demand"]
+
+payoffs = np.array([
+    [  10,  -5,  -30],
+    [ -20,  60,   80],
+    [ -60,  40,  140],
+    [-120,  10,  220],
+], dtype=float)
+
+prior = np.array([0.25, 0.45, 0.30])
+study_cost = 15.0
+
+# How reliably does the study say "favourable" in each true state?
+p_favourable_given_state = np.array([0.20, 0.60, 0.90])
+
+# Bayes, exactly as in chapter 3.
+joint_favourable = prior * p_favourable_given_state
+joint_unfavourable = prior * (1 - p_favourable_given_state)
+
+p_favourable = joint_favourable.sum()
+p_unfavourable = joint_unfavourable.sum()
+
+posterior_favourable = joint_favourable / p_favourable
+posterior_unfavourable = joint_unfavourable / p_unfavourable
+
+print("Study reliability - P(says favourable | true state):")
+for state, value in zip(states, p_favourable_given_state):
+    print(f"  {state:<18}{value:>6.2f}")
+
+print()
+print(f"P(study says favourable)   {p_favourable:.4f}")
+print(f"P(study says unfavourable) {p_unfavourable:.4f}")
+
+print()
+beliefs = pd.DataFrame({
+    "prior": prior,
+    "given favourable": posterior_favourable,
+    "given unfavourable": posterior_unfavourable,
+}, index=states)
+print("Revised beliefs about demand:")
+print(beliefs.round(4).to_string())
+print()
+print("A favourable verdict roughly halves P(low) and raises P(high)")
+print("from 30% to 46%. That shift is what the study is buying.")`}
+</PythonCell>
+
+<h2 id="rolling-back">Rolling back</h2>
+
+Evaluate a tree from the leaves inward:
+
+1. At each **chance** node, take the expected value of its branches.
+2. At each **decision** node, take the maximum over its branches, and record which branch won.
+3. Continue until you reach the root.
+
+The root's value is the expected value of playing optimally; the recorded branches are the
+strategy.
+
+**Rolling back is not the same as picking the best path.** The output is a *policy* — what to do
+in each situation that might arise — not a single sequence. That distinction is why sequential
+decisions need trees rather than tables.
+
+<PythonCell label="Evaluating the tree">
+{`def best_decision(beliefs):
+    """At a decision node: value each alternative, take the maximum."""
+    values = payoffs @ beliefs
+    index = int(values.argmax())
+    return alternatives[index], values[index], values
+
+# ---- Branch 1: no study, decide on the prior --------------------------------
+no_study_choice, no_study_value, no_study_values = best_decision(prior)
+
+print("BRANCH 1 - no study")
+for name, value in zip(alternatives, no_study_values):
+    marker = "  <-" if name == no_study_choice else ""
+    print(f"    {name:<20}{value:>9,.2f}{marker}")
+print(f"  value of this branch: {no_study_value:,.2f}")
+
+# ---- Branch 2: commission the study -----------------------------------------
+favourable_choice, favourable_value, favourable_values = best_decision(posterior_favourable)
+unfavourable_choice, unfavourable_value, unfavourable_values = best_decision(posterior_unfavourable)
+
+print()
+print("BRANCH 2 - commission the study")
+print(f"  if it says FAVOURABLE (p = {p_favourable:.4f}):")
+for name, value in zip(alternatives, favourable_values):
+    marker = "  <-" if name == favourable_choice else ""
+    print(f"    {name:<20}{value:>9,.2f}{marker}")
+print(f"    -> {favourable_choice}, worth {favourable_value:,.2f}")
+
+print()
+print(f"  if it says UNFAVOURABLE (p = {p_unfavourable:.4f}):")
+for name, value in zip(alternatives, unfavourable_values):
+    marker = "  <-" if name == unfavourable_choice else ""
+    print(f"    {name:<20}{value:>9,.2f}{marker}")
+print(f"    -> {unfavourable_choice}, worth {unfavourable_value:,.2f}")
+
+study_value = (p_favourable * favourable_value
+               + p_unfavourable * unfavourable_value
+               - study_cost)
+print()
+print(f"  chance node value: {p_favourable:.4f} x {favourable_value:,.2f} + "
+      f"{p_unfavourable:.4f} x {unfavourable_value:,.2f}"
+      f" = {study_value + study_cost:,.2f}")
+print(f"  less the study cost of {study_cost:,.2f}: {study_value:,.2f}")
+
+print()
+print("=" * 60)
+print(f"ROOT DECISION: {'commission the study' if study_value > no_study_value else 'skip the study'}")
+print(f"  study    {study_value:>9,.2f}")
+print(f"  no study {no_study_value:>9,.2f}")
+print("=" * 60)`}
+</PythonCell>
+
+<PythonCell label="The value of imperfect information">
+{`# EVSI: what the study is worth, before subtracting its cost.
+evsi = (p_favourable * favourable_value
+        + p_unfavourable * unfavourable_value) - no_study_value
+
+# EVPI, from the previous lesson.
+evpi = prior @ payoffs.max(axis=0) - no_study_value
+
+print(f"EVSI (expected value of this study)     {evsi:>9,.2f}")
+print(f"EVPI (value of perfect information)     {evpi:>9,.2f}")
+print(f"efficiency of the study                 {evsi / evpi:>9.1%}")
+print()
+print(f"study cost                              {study_cost:>9,.2f}")
+print(f"net gain from commissioning it          {evsi - study_cost:>9,.2f}")
+
+print()
+print("EVSI can never exceed EVPI - an imperfect signal cannot be worth")
+print("more than knowing the answer outright. Efficiency says how much of")
+print("the available value this particular study captures.")
+
+print()
+print("How good would the study have to be to be worth twice its cost?")
+for reliability in [0.6, 0.7, 0.8, 0.9, 0.95, 1.0]:
+    accuracy = np.array([1 - reliability, 0.5, reliability])
+    joint_f = prior * accuracy
+    joint_u = prior * (1 - accuracy)
+    p_f, p_u = joint_f.sum(), joint_u.sum()
+    _, value_f, _ = best_decision(joint_f / p_f)
+    _, value_u, _ = best_decision(joint_u / p_u)
+    value = p_f * value_f + p_u * value_u - no_study_value
+    print(f"  P(favourable | high demand) = {reliability:.2f}  ->  EVSI {value:>7,.2f}")`}
+</PythonCell>
+
+<h2 id="plotting">Plotting the tree</h2>
+
+Drawing the tree makes the structure and the rolled-back values legible in a way the numbers alone
+are not. `networkx` handles the layout; squares mark decisions and circles mark chance.
+
+<PythonCell label="Drawing the decision tree">
+{`import matplotlib.pyplot as plt
+import networkx as nx
+
+graph = nx.DiGraph()
+
+nodes = {
+    "root":       dict(kind="decision", label=f"root\\n{max(study_value, no_study_value):,.1f}"),
+    "no_study":   dict(kind="decision", label=f"decide now\\n{no_study_value:,.1f}"),
+    "study":      dict(kind="chance",   label=f"study\\n{study_value:,.1f}"),
+    "fav":        dict(kind="decision", label=f"favourable\\n{favourable_value:,.1f}"),
+    "unfav":      dict(kind="decision", label=f"unfavourable\\n{unfavourable_value:,.1f}"),
+    "no_study_x": dict(kind="leaf",     label=f"{no_study_choice}\\n{no_study_value:,.1f}"),
+    "fav_x":      dict(kind="leaf",     label=f"{favourable_choice}\\n{favourable_value:,.1f}"),
+    "unfav_x":    dict(kind="leaf",     label=f"{unfavourable_choice}\\n{unfavourable_value:,.1f}"),
+}
+for name, attributes in nodes.items():
+    graph.add_node(name, **attributes)
+
+edges = [
+    ("root", "no_study", "skip study"),
+    ("root", "study", f"pay {study_cost:,.0f}"),
+    ("study", "fav", f"p = {p_favourable:.2f}"),
+    ("study", "unfav", f"p = {p_unfavourable:.2f}"),
+    ("no_study", "no_study_x", ""),
+    ("fav", "fav_x", ""),
+    ("unfav", "unfav_x", ""),
+]
+for source, target, label in edges:
+    graph.add_edge(source, target, label=label)
+
+positions = {
+    "root": (0, 0),
+    "no_study": (1, -1.4), "study": (1, 1.0),
+    "fav": (2, 1.9), "unfav": (2, 0.1),
+    "no_study_x": (3, -1.4), "fav_x": (3, 1.9), "unfav_x": (3, 0.1),
+}
+
+shapes = {"decision": "s", "chance": "o", "leaf": "o"}
+fig, ax = plt.subplots(figsize=(10, 5))
+for kind, marker in shapes.items():
+    group = [n for n, d in graph.nodes(data=True) if d["kind"] == kind]
+    nx.draw_networkx_nodes(graph, positions, nodelist=group, node_shape=marker,
+                           node_size=4200, ax=ax,
+                           edgecolors="#555555", linewidths=1.2,
+                           node_color="none" if kind == "leaf" else "#dbe6f6")
+
+nx.draw_networkx_edges(graph, positions, ax=ax, arrows=True,
+                       arrowsize=11, node_size=4200)
+nx.draw_networkx_labels(graph, positions,
+                        labels={n: d["label"] for n, d in graph.nodes(data=True)},
+                        font_size=7, ax=ax)
+nx.draw_networkx_edge_labels(graph, positions,
+                             edge_labels=nx.get_edge_attributes(graph, "label"),
+                             font_size=7, ax=ax)
+ax.set_title("Squares are decisions (take the max); circles are chance (take the average)")
+ax.axis("off")
+plt.tight_layout()
+
+print("Optimal policy:")
+print(f"  1. {'Commission the study' if study_value > no_study_value else 'Skip the study'}")
+print(f"  2. If favourable   -> {favourable_choice}")
+print(f"     If unfavourable -> {unfavourable_choice}")
+print()
+print("Note this is a policy, not a path. It says what to do in each")
+print("situation that might arise, which is what a sequential decision needs.")`}
+</PythonCell>
+
+<Callout title="Trees grow fast" variant="warning">
+  <p>
+    Every additional decision or chance point multiplies the number of leaves. Three decisions with
+    four options each, interleaved with three binary chance events, already gives 512 leaves. Beyond
+    a couple of stages, hand-drawn trees stop being practical and the problem becomes one for
+    dynamic programming or simulation — chapter&nbsp;9's territory.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "At a chance node during roll-back, what operation do you apply?",
+      options: [
+        {
+          text: "Take the probability-weighted average of the branches.",
+          correct: true,
+          explanation:
+            "Right — you do not choose at a chance node, so you average. You take the maximum only at decision nodes, where you do choose.",
+        },
+        {
+          text: "Take the maximum branch value.",
+          explanation:
+            "That is the decision-node rule. Applying it at a chance node assumes nature cooperates with you, which would badly overstate the tree's value.",
+        },
+        {
+          text: "Take the minimum branch value.",
+          explanation:
+            "That would assume nature is adversarial. Neither extreme is right when probabilities are available — the weighted average is.",
+        },
+      ],
+    },
+    {
+      prompt: "Why can EVSI never exceed EVPI?",
+      options: [
+        {
+          text: "An imperfect signal cannot be worth more than knowing the state outright.",
+          correct: true,
+          explanation:
+            "Exactly. EVPI is the ceiling on any information's value, and the ratio EVSI/EVPI measures what fraction of that ceiling a particular study captures.",
+        },
+        {
+          text: "Because EVSI is computed after subtracting the study's cost.",
+          explanation:
+            "EVSI is the gross value, before cost. The relationship to EVPI holds regardless of what the study charges.",
+        },
+        {
+          text: "Because the study only has two possible verdicts.",
+          explanation:
+            "A study with more verdicts could be more informative, but it still could not exceed perfect information. The bound is about informativeness, not the number of outcomes.",
+        },
+      ],
+    },
+    {
+      prompt: "The rolled-back tree yields a policy rather than a path. What does that mean?",
+      options: [
+        {
+          text: "It specifies what to do in every situation that might arise, not one predetermined sequence.",
+          correct: true,
+          explanation:
+            "Correct, and it is why sequential problems need trees. 'Commission the study, then expand large if favourable and small if not' is a policy; no single sequence captures it.",
+        },
+        {
+          text: "It means the recommendation is provisional and may change.",
+          explanation:
+            "The policy is fully determined by the tree. What varies is which branch reality takes, and the policy already covers each case.",
+        },
+        {
+          text: "It means several alternatives are tied.",
+          explanation:
+            "Ties are possible but unrelated. A policy is contingent on observed outcomes, which is a structural property of sequential decisions.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="282-293" />

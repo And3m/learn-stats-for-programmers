@@ -1,0 +1,324 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Run the forward pass to find earliest start and finish times.</li>
+    <li>Run the backward pass to find latest times.</li>
+    <li>Compute slack and identify the critical path.</li>
+  </ul>
+</Callout>
+
+The critical path is the longest chain of dependent activities through the network. Its length
+**is** the project duration, and every activity on it has zero room to slip.
+
+This is the single most useful output of schedule analysis, because it tells you where management
+attention actually changes the finish date — and, equally usefully, where it does not.
+
+<h2 id="earliest-times">The forward pass</h2>
+
+Work forward through the network computing, for each activity, the earliest it could start and
+finish:
+
+$$
+ES_i = \max_{p \in \text{predecessors}(i)} EF_p, \qquad EF_i = ES_i + t_i
+$$
+
+An activity cannot start until **every** predecessor is finished, hence the maximum. Activities
+with no predecessors start at time zero.
+
+The largest $EF$ across all activities is the project duration.
+
+<PythonCell label="The forward pass">
+{`import numpy as np
+import pandas as pd
+
+network = pd.DataFrame([
+    ("A", "Requirements gathering", "",     4,  6, 10),
+    ("B", "Data model design",      "A",    3,  5,  9),
+    ("C", "API design",             "A",    2,  4,  8),
+    ("D", "Backend services",       "B,C",  8, 12, 22),
+    ("E", "Frontend application",   "C",    6, 10, 16),
+    ("F", "Data migration",         "B",    5,  8, 15),
+    ("G", "System integration",     "D,E",  3,  5, 11),
+    ("H", "Testing",                "F,G",  4,  7, 13),
+    ("I", "Documentation",          "E",    2,  3,  6),
+    ("J", "Launch",                 "H,I",  1,  2,  5),
+], columns=["code", "name", "predecessors", "a", "m", "b"])
+
+network["te"] = (network["a"] + 4 * network["m"] + network["b"]) / 6
+network["variance"] = ((network["b"] - network["a"]) / 6) ** 2
+
+duration = dict(zip(network["code"], network["te"]))
+predecessors = {
+    row["code"]: [p for p in row["predecessors"].split(",") if p]
+    for _, row in network.iterrows()
+}
+successors = {code: [] for code in duration}
+for code, parents in predecessors.items():
+    for parent in parents:
+        successors[parent].append(code)
+
+def topological_order(parents):
+    remaining = {node: set(values) for node, values in parents.items()}
+    order = []
+    while remaining:
+        ready = sorted(node for node, values in remaining.items() if not values)
+        if not ready:
+            raise ValueError("the network contains a cycle")
+        order.extend(ready)
+        for node in ready:
+            del remaining[node]
+        for values in remaining.values():
+            values.difference_update(ready)
+    return order
+
+order = topological_order(predecessors)
+
+earliest_start, earliest_finish = {}, {}
+for code in order:
+    earliest_start[code] = max((earliest_finish[p] for p in predecessors[code]), default=0.0)
+    earliest_finish[code] = earliest_start[code] + duration[code]
+
+project_duration = max(earliest_finish.values())
+
+print(f"{'code':>5}{'duration':>10}{'ES':>8}{'EF':>8}   waits on")
+for code in order:
+    waiting = ", ".join(predecessors[code]) or "-"
+    print(f"{code:>5}{duration[code]:>10.2f}{earliest_start[code]:>8.2f}"
+          f"{earliest_finish[code]:>8.2f}   {waiting}")
+
+print()
+print(f"Project duration: {project_duration:.2f} working days")`}
+</PythonCell>
+
+<h2 id="latest-times">The backward pass</h2>
+
+Now work backwards from the project end, computing the latest each activity could finish without
+delaying the project:
+
+$$
+LF_i = \min_{s \in \text{successors}(i)} LS_s, \qquad LS_i = LF_i - t_i
+$$
+
+An activity must finish before the **earliest** of its successors needs to start, hence the
+minimum. Terminal activities have $LF$ equal to the project duration.
+
+<PythonCell label="The backward pass, and slack">
+{`latest_finish, latest_start = {}, {}
+for code in reversed(order):
+    latest_finish[code] = min(
+        (latest_start[s] for s in successors[code]), default=project_duration
+    )
+    latest_start[code] = latest_finish[code] - duration[code]
+
+slack = {code: latest_start[code] - earliest_start[code] for code in duration}
+
+schedule = pd.DataFrame({
+    "code": order,
+    "duration": [duration[c] for c in order],
+    "ES": [earliest_start[c] for c in order],
+    "EF": [earliest_finish[c] for c in order],
+    "LS": [latest_start[c] for c in order],
+    "LF": [latest_finish[c] for c in order],
+    "slack": [slack[c] for c in order],
+})
+schedule["critical"] = schedule["slack"] < 1e-9
+print(schedule.round(2).to_string(index=False))
+
+print()
+print("Consistency check - slack computed two ways must agree:")
+by_finish = {code: latest_finish[code] - earliest_finish[code] for code in duration}
+print(f"  LS - ES equals LF - EF for every activity: "
+      f"{all(abs(slack[c] - by_finish[c]) < 1e-9 for c in duration)}")`}
+</PythonCell>
+
+<h2 id="slack">Slack</h2>
+
+**Slack** (or float) is how long an activity can be delayed without pushing the project out:
+
+$$
+\text{slack}_i = LS_i - ES_i = LF_i - EF_i
+$$
+
+Zero slack means **critical**: any delay to that activity delays the whole project, day for day.
+
+Positive slack means the activity has room. An activity with six days of slack can start six days
+late, or run six days long, and the finish date does not move.
+
+<Callout title="Slack is shared, not owned" variant="warning">
+  <p>
+    Slack belongs to a <em>path</em>, not to an activity. If two activities in sequence each show
+    four days of slack, that is usually the same four days seen twice — consume it on the first and
+    the second has none left. This is <strong>total float</strong>. Free float, which is what an
+    activity can absorb without affecting any successor, is the more conservative figure and is
+    often much smaller.
+  </p>
+</Callout>
+
+<h2 id="finding-the-path">Finding the path in code</h2>
+
+<PythonCell label="The critical path, and every path's length">
+{`import itertools
+
+critical = [code for code in order if slack[code] < 1e-9]
+print(f"Critical activities: {' -> '.join(critical)}")
+print(f"Their durations sum to {sum(duration[c] for c in critical):.2f} days "
+      f"= the project duration")
+
+print()
+# Enumerate every path through the network and rank by length.
+starts = [c for c in order if not predecessors[c]]
+ends = [c for c in order if not successors[c]]
+
+def all_paths(node, target):
+    if node == target:
+        return [[node]]
+    return [[node] + rest for s in successors[node] for rest in all_paths(s, target)]
+
+paths = [p for s in starts for e in ends for p in all_paths(s, e)]
+lengths = [(sum(duration[c] for c in path), path) for path in paths]
+lengths.sort(reverse=True)
+
+print(f"All {len(paths)} paths through the network, longest first:")
+for length, path in lengths:
+    marker = "  <- CRITICAL" if abs(length - project_duration) < 1e-9 else ""
+    print(f"  {length:>7.2f} days  {' -> '.join(path)}{marker}")
+
+print()
+runner_up = lengths[1][0]
+print(f"The second-longest path is {runner_up:.2f} days, only "
+      f"{project_duration - runner_up:.2f} days shorter.")
+print("A near-critical path is worth watching: modest slippage there makes")
+print("it critical, and the critical path changes underneath you.")`}
+</PythonCell>
+
+<PythonCell label="Drawing the network">
+{`import matplotlib.pyplot as plt
+import networkx as nx
+
+graph = nx.DiGraph()
+for code in order:
+    graph.add_node(code, critical=slack[code] < 1e-9)
+for code, parents in predecessors.items():
+    for parent in parents:
+        graph.add_edge(parent, code)
+
+# Lay activities out left-to-right by earliest start.
+levels = {}
+for code in order:
+    levels[code] = 0 if not predecessors[code] else 1 + max(levels[p] for p in predecessors[code])
+
+positions = {}
+for level in sorted(set(levels.values())):
+    at_level = [c for c in order if levels[c] == level]
+    for index, code in enumerate(at_level):
+        positions[code] = (level, index - (len(at_level) - 1) / 2)
+
+critical_nodes = [c for c in order if slack[c] < 1e-9]
+other_nodes = [c for c in order if slack[c] >= 1e-9]
+critical_edges = [(u, v) for u, v in graph.edges
+                  if u in critical_nodes and v in critical_nodes]
+other_edges = [e for e in graph.edges if e not in critical_edges]
+
+fig, ax = plt.subplots(figsize=(10, 4.5))
+nx.draw_networkx_nodes(graph, positions, nodelist=critical_nodes, node_size=1300,
+                       node_color="#f6d7c4", edgecolors="#c64600", linewidths=2, ax=ax)
+nx.draw_networkx_nodes(graph, positions, nodelist=other_nodes, node_size=1300,
+                       node_color="#dbe6f6", edgecolors="#1a5fb4", linewidths=1.2, ax=ax)
+nx.draw_networkx_edges(graph, positions, edgelist=critical_edges, width=2.2,
+                       node_size=1300, ax=ax, edge_color="#c64600")
+nx.draw_networkx_edges(graph, positions, edgelist=other_edges, width=1.0,
+                       node_size=1300, ax=ax, edge_color="#8aa0b4")
+nx.draw_networkx_labels(
+    graph, positions,
+    labels={c: f"{c}\\n{duration[c]:.1f}d\\ns={slack[c]:.1f}" for c in order},
+    font_size=7, ax=ax,
+)
+ax.set_title("Critical path highlighted; s = slack in days")
+ax.axis("off")
+plt.tight_layout()
+
+print("Where management attention actually pays:")
+for code in order:
+    if slack[code] < 1e-9:
+        print(f"  {code}: critical - a day lost here is a day lost overall")
+print()
+for code in order:
+    if slack[code] >= 1e-9:
+        print(f"  {code}: {slack[code]:.2f} days of slack - expediting it "
+              f"changes nothing")`}
+</PythonCell>
+
+That final list is the practical payoff. Pouring resources into an activity with slack feels
+productive and moves the finish date by exactly zero days. Only the critical path matters — until
+you shorten it enough that a near-critical path takes over, which is the subject of the next
+lesson.
+
+<Quiz
+  questions={[
+    {
+      prompt: "In the forward pass, why is the earliest start the MAXIMUM of predecessors' finishes?",
+      options: [
+        {
+          text: "An activity cannot begin until every predecessor is complete, so the slowest one governs.",
+          correct: true,
+          explanation:
+            "Right. The backward pass takes the minimum for the mirror-image reason: an activity must finish before the earliest successor needs to start.",
+        },
+        {
+          text: "Because the maximum gives a safety margin.",
+          explanation:
+            "There is no margin involved — it is a logical necessity of the dependencies. Contingency is added separately, if at all.",
+        },
+        {
+          text: "To ensure the schedule is feasible.",
+          explanation:
+            "True as a consequence, but the reason is the dependency logic itself: all predecessors must be done, so you wait for the last.",
+        },
+      ],
+    },
+    {
+      prompt: "An activity has 6 days of slack. Its successor also shows 6 days. How much can you use?",
+      options: [
+        {
+          text: "Six days in total across both — it is usually the same slack seen twice.",
+          correct: true,
+          explanation:
+            "Exactly. Total float belongs to a path, not to an activity. Consuming it on the first activity leaves none for the second, which is why free float is the safer figure to plan against.",
+        },
+        {
+          text: "Twelve days — six on each.",
+          explanation:
+            "Adding the floats double-counts shared slack and will push the project past its finish date.",
+        },
+        {
+          text: "Neither, until the critical path is recomputed.",
+          explanation:
+            "The slack is genuinely available; the point is only that it is shared along the path rather than owned per activity.",
+        },
+      ],
+    },
+    {
+      prompt: "The second-longest path is only 2 days shorter than the critical path. Why does that matter?",
+      options: [
+        {
+          text: "Modest slippage makes it critical, so the critical path can change during the project.",
+          correct: true,
+          explanation:
+            "Correct. Near-critical paths need monitoring too, and they are the reason crashing has diminishing returns — shorten the critical path far enough and another one takes over.",
+        },
+        {
+          text: "It means the network was built incorrectly.",
+          explanation:
+            "Multiple near-equal paths are entirely normal in a well-parallelised project, and are arguably a sign of good planning.",
+        },
+        {
+          text: "It means the project will take the sum of both paths.",
+          explanation:
+            "Parallel paths run concurrently. The duration is the longest path, not the sum.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="357-369" />

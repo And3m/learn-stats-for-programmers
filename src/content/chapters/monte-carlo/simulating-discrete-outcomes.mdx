@@ -1,0 +1,281 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Build a simulation with several interacting discrete inputs.</li>
+    <li>Model state that carries between periods.</li>
+    <li>Compare policies on a distribution rather than an average.</li>
+  </ul>
+</Callout>
+
+The previous lesson simulated one variable in isolation. Real problems have several interacting
+ones, and state that carries forward — which is exactly where closed-form answers stop being
+available and simulation starts earning its keep.
+
+<h2 id="building-the-distribution">Building the distribution</h2>
+
+The scenario: a workshop stocks a spare part. Each day brings uncertain demand and, separately,
+uncertain resupply. Unmet demand is lost, and holding stock costs money. What reorder point
+minimises total cost?
+
+Three uncertain inputs, one carried state, and a policy to choose. Nothing here has a tidy
+formula.
+
+<PythonCell label="The model's inputs">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(31)
+
+demand_values = np.array([0, 1, 2, 3, 4, 5])
+demand_probability = np.array([20, 40, 60, 44, 26, 10]) / 200
+
+# Resupply lead time, in days, once an order is placed.
+lead_values = np.array([1, 2, 3, 4])
+lead_probability = np.array([0.15, 0.45, 0.30, 0.10])
+
+costs = {
+    "holding_per_unit_per_day": 0.35,
+    "stockout_per_unit": 9.00,
+    "order_placement": 22.00,
+}
+
+print("Daily demand:")
+for value, p in zip(demand_values, demand_probability):
+    print(f"  {value} units  p = {p:.3f}  {'#' * int(p * 60)}")
+print(f"  expected {(demand_values * demand_probability).sum():.3f} units/day")
+
+print()
+print("Resupply lead time:")
+for value, p in zip(lead_values, lead_probability):
+    print(f"  {value} days   p = {p:.3f}  {'#' * int(p * 60)}")
+print(f"  expected {(lead_values * lead_probability).sum():.3f} days")
+
+print()
+print("Costs:")
+for name, value in costs.items():
+    print(f"  {name:<28} {value:>6.2f}")`}
+</PythonCell>
+
+<h2 id="running-trials">Running the trials</h2>
+
+The simulation walks day by day. Each day: demand arrives, stock is consumed, a stockout is
+recorded if demand exceeds stock, any outstanding delivery arrives on schedule, and a new order is
+placed if stock has fallen to the reorder point.
+
+Note that this loop **cannot** be vectorised in the obvious way, because each day depends on the
+one before. That path dependence is precisely why the problem needs simulation.
+
+<PythonCell label="One inventory policy, simulated many times">
+{`def simulate_policy(reorder_point, order_quantity, days=365, runs=400, seed=0):
+    """Return per-run total cost and service level for one (s, Q) policy."""
+    generator = np.random.default_rng(seed)
+    total_costs = np.empty(runs)
+    service_levels = np.empty(runs)
+
+    for run in range(runs):
+        stock = order_quantity
+        pending_arrival = -1          # day index the outstanding order lands
+        holding = stockouts = orders = 0.0
+        demanded = served = 0.0
+
+        for day in range(days):
+            if day == pending_arrival:
+                stock += order_quantity
+                pending_arrival = -1
+
+            demand = generator.choice(demand_values, p=demand_probability)
+            demanded += demand
+            sold = min(demand, stock)
+            served += sold
+            stock -= sold
+            stockouts += demand - sold
+
+            holding += stock
+            if stock <= reorder_point and pending_arrival < 0:
+                orders += 1
+                lead = generator.choice(lead_values, p=lead_probability)
+                pending_arrival = day + lead
+
+        total_costs[run] = (
+            holding * costs["holding_per_unit_per_day"]
+            + stockouts * costs["stockout_per_unit"]
+            + orders * costs["order_placement"]
+        )
+        service_levels[run] = served / demanded
+
+    return total_costs, service_levels
+
+annual_cost, service = simulate_policy(reorder_point=6, order_quantity=25, seed=7)
+
+print(f"Policy: reorder at 6 units, order 25")
+print(f"  mean annual cost   {annual_cost.mean():>10,.2f}")
+print(f"  median             {np.median(annual_cost):>10,.2f}")
+print(f"  5th percentile     {np.percentile(annual_cost, 5):>10,.2f}")
+print(f"  95th percentile    {np.percentile(annual_cost, 95):>10,.2f}")
+print(f"  mean service level {service.mean():>10.4f}")`}
+</PythonCell>
+
+<h2 id="analysing">Analysing the results</h2>
+
+With a simulator in hand, comparing policies is a loop. The valuable output is not which policy
+has the lowest mean — it is the whole distribution, because a policy with a slightly better
+average and a much worse tail is usually the wrong choice.
+
+<PythonCell label="Comparing policies on their whole distribution">
+{`policies = [(3, 20), (6, 25), (6, 40), (10, 25), (10, 40), (14, 30)]
+
+rows = []
+distributions = {}
+for reorder_point, quantity in policies:
+    total, level = simulate_policy(reorder_point, quantity, seed=7)
+    distributions[(reorder_point, quantity)] = total
+    rows.append({
+        "reorder at": reorder_point,
+        "order qty": quantity,
+        "mean cost": total.mean(),
+        "p95 cost": np.percentile(total, 95),
+        "worst": total.max(),
+        "service": level.mean(),
+    })
+
+summary = pd.DataFrame(rows).sort_values("mean cost")
+print(summary.round(3).to_string(index=False))
+
+best = summary.iloc[0]
+print()
+print(f"Lowest mean cost: reorder at {best['reorder at']:.0f}, "
+      f"order {best['order qty']:.0f}")
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.6))
+for key in [(3, 20), (6, 25), (10, 40)]:
+    left.hist(distributions[key], bins=30, alpha=0.55, label=f"s={key[0]}, Q={key[1]}")
+left.set_xlabel("annual cost")
+left.set_ylabel("runs")
+left.set_title("Cost distributions overlap substantially")
+left.legend(fontsize=8)
+
+means = [row["mean cost"] for row in rows]
+p95s = [row["p95 cost"] for row in rows]
+labels = [f"{p[0]},{p[1]}" for p in policies]
+positions = np.arange(len(policies))
+right.barh(positions - 0.2, means, height=0.4, label="mean")
+right.barh(positions + 0.2, p95s, height=0.4, label="95th percentile")
+right.set_yticks(positions)
+right.set_yticklabels(labels, fontsize=8)
+right.set_xlabel("annual cost")
+right.set_title("Mean vs. tail")
+right.legend(fontsize=8)
+plt.tight_layout()`}
+</PythonCell>
+
+<PythonCell label="Is the difference real, or Monte Carlo noise?">
+{`a = distributions[(6, 25)]
+b = distributions[(10, 40)]
+
+difference = a.mean() - b.mean()
+se = np.sqrt(a.var(ddof=1) / len(a) + b.var(ddof=1) / len(b))
+
+print(f"policy (6, 25) mean cost  {a.mean():>10,.2f}")
+print(f"policy (10, 40) mean cost {b.mean():>10,.2f}")
+print(f"difference                {difference:>10,.2f}")
+print(f"standard error            {se:>10,.2f}")
+print(f"95% interval on the difference: "
+      f"[{difference - 1.96 * se:,.2f}, {difference + 1.96 * se:,.2f}]")
+
+verdict = ("a real difference" if abs(difference) > 1.96 * se
+           else "indistinguishable at this number of runs")
+print(f"-> {verdict}")
+
+print()
+print("How often does each policy actually come out cheaper, run for run?")
+print(f"  (6, 25) cheaper in {(a < b).mean():.1%} of paired runs")
+
+print()
+print("Increasing the number of runs shrinks the interval:")
+for runs in [100, 400, 1600]:
+    total_a, _ = simulate_policy(6, 25, runs=runs, seed=7)
+    total_b, _ = simulate_policy(10, 40, runs=runs, seed=7)
+    diff = total_a.mean() - total_b.mean()
+    error = np.sqrt(total_a.var(ddof=1) / runs + total_b.var(ddof=1) / runs)
+    print(f"  {runs:>5} runs: difference {diff:>9,.2f} +/- {1.96 * error:>8,.2f}")`}
+</PythonCell>
+
+<Callout title="Always quantify the simulation's own uncertainty" variant="pitfall">
+  <p>
+    Two policies whose mean costs differ by less than the Monte Carlo standard error are not
+    distinguishable, and picking the lower one is picking noise. Reporting a simulated mean without
+    its standard error is the same error as reporting a regression coefficient without its — and it
+    is much more common, because a simulation feels like a measurement rather than an estimate.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why can't the day-by-day inventory loop be vectorised across days?",
+      options: [
+        {
+          text: "Each day's stock depends on the previous day's, so the days must be computed in order.",
+          correct: true,
+          explanation:
+            "Right. That path dependence is what makes the problem analytically intractable and simulation the natural tool. Independent *runs* can still be parallelised.",
+        },
+        {
+          text: "Because np.random.choice cannot generate more than one value at a time.",
+          explanation:
+            "It generates arrays happily. The obstacle is the sequential dependence between days, not the sampling.",
+        },
+        {
+          text: "Because the demand distribution changes each day.",
+          explanation:
+            "It is fixed here. What carries between days is the stock level.",
+        },
+      ],
+    },
+    {
+      prompt: "Policy A has a mean cost £40 lower than B, with a Monte Carlo standard error of £55. What follows?",
+      options: [
+        {
+          text: "The two are indistinguishable at this number of runs — choosing A would be choosing noise.",
+          correct: true,
+          explanation:
+            "Correct. The difference is well inside the interval. Either run more trials or accept that the policies are equivalent on cost and decide on other grounds.",
+        },
+        {
+          text: "A is better, since its mean is lower.",
+          explanation:
+            "The mean is an estimate with its own uncertainty. A difference smaller than the standard error is not evidence of anything.",
+        },
+        {
+          text: "The simulation is broken.",
+          explanation:
+            "It is working correctly and reporting honestly. A large standard error means the outcome is genuinely variable, not that the code is wrong.",
+        },
+      ],
+    },
+    {
+      prompt: "Why compare policies on the whole distribution rather than the mean?",
+      options: [
+        {
+          text: "A policy with a marginally better average can have a much worse tail, and the tail is often what matters.",
+          correct: true,
+          explanation:
+            "Exactly. Getting the full distribution is the main reason to simulate at all — collapsing it back to a mean throws away most of what you paid for.",
+        },
+        {
+          text: "Because means are always misleading.",
+          explanation:
+            "Means are useful; they are just incomplete. The point is that simulation gives you more, and there is no reason to discard it.",
+        },
+        {
+          text: "Because the distribution is easier to compute than the mean.",
+          explanation:
+            "The mean is computed from the same samples, at trivially less cost. Ease is not the issue.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="255-259" />

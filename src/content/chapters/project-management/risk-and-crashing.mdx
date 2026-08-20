@@ -1,0 +1,369 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Turn path variance into a probability of hitting a date.</li>
+    <li>Compute crash cost per day and choose what to accelerate.</li>
+    <li>Recognise where the classical PERT probability calculation breaks down.</li>
+  </ul>
+</Callout>
+
+<h2 id="probability-of-completion">Probability of on-time completion</h2>
+
+The critical path gives a single expected duration. Committing to a date needs more: how likely
+is it that the project actually finishes by then?
+
+The classical PERT answer sums variances along the critical path — legitimate for independent
+activities, since variances of independent quantities add — and appeals to the central limit
+theorem to treat the total as normal:
+
+$$
+\sigma^2_{\text{project}} = \sum_{i \in \text{critical path}} \sigma_i^2,
+\qquad
+Z = \frac{D - T_e}{\sigma_{\text{project}}}
+$$
+
+where $D$ is the target date and $T_e$ the expected duration.
+
+<PythonCell label="The classical PERT probability">
+{`import numpy as np
+import pandas as pd
+from scipy import stats
+
+network = pd.DataFrame([
+    ("A", "Requirements gathering", "",     4,  6, 10),
+    ("B", "Data model design",      "A",    3,  5,  9),
+    ("C", "API design",             "A",    2,  4,  8),
+    ("D", "Backend services",       "B,C",  8, 12, 22),
+    ("E", "Frontend application",   "C",    6, 10, 16),
+    ("F", "Data migration",         "B",    5,  8, 15),
+    ("G", "System integration",     "D,E",  3,  5, 11),
+    ("H", "Testing",                "F,G",  4,  7, 13),
+    ("I", "Documentation",          "E",    2,  3,  6),
+    ("J", "Launch",                 "H,I",  1,  2,  5),
+], columns=["code", "name", "predecessors", "a", "m", "b"])
+
+network["te"] = (network["a"] + 4 * network["m"] + network["b"]) / 6
+network["variance"] = ((network["b"] - network["a"]) / 6) ** 2
+
+duration = dict(zip(network["code"], network["te"]))
+variance = dict(zip(network["code"], network["variance"]))
+predecessors = {
+    row["code"]: [p for p in row["predecessors"].split(",") if p]
+    for _, row in network.iterrows()
+}
+successors = {code: [] for code in duration}
+for code, parents in predecessors.items():
+    for parent in parents:
+        successors[parent].append(code)
+
+def schedule(durations):
+    order, remaining = [], {n: set(v) for n, v in predecessors.items()}
+    while remaining:
+        ready = sorted(n for n, v in remaining.items() if not v)
+        order.extend(ready)
+        for n in ready:
+            del remaining[n]
+        for v in remaining.values():
+            v.difference_update(ready)
+
+    finish = {}
+    for code in order:
+        start = max((finish[p] for p in predecessors[code]), default=0.0)
+        finish[code] = start + durations[code]
+    return order, finish
+
+order, finish = schedule(duration)
+project_duration = max(finish.values())
+
+# Recover the critical path by walking back from the finish.
+critical, node = [], max(finish, key=finish.get)
+while True:
+    critical.append(node)
+    if not predecessors[node]:
+        break
+    node = max(predecessors[node], key=lambda p: finish[p])
+critical.reverse()
+
+path_variance = sum(variance[c] for c in critical)
+path_sd = np.sqrt(path_variance)
+
+print(f"critical path        {' -> '.join(critical)}")
+print(f"expected duration    {project_duration:.2f} days")
+print(f"path variance        {path_variance:.4f}")
+print(f"path sd              {path_sd:.4f} days")
+
+print()
+print(f"{'target':>8}{'Z':>9}{'P(on time)':>13}")
+for target in [40, 45, 48, 50, 52, 55, 60]:
+    z = (target - project_duration) / path_sd
+    print(f"{target:>8}{z:>9.3f}{stats.norm.cdf(z):>13.2%}")
+
+print()
+for confidence in [0.50, 0.80, 0.90, 0.95]:
+    date = project_duration + stats.norm.ppf(confidence) * path_sd
+    print(f"  {confidence:.0%} confident of finishing within {date:.1f} days")`}
+</PythonCell>
+
+<Callout title="The classical calculation is optimistic" variant="pitfall">
+  <p>
+    It considers only the critical path, and ignores that a <em>near</em>-critical path can
+    overrun and become the binding one. With several paths of similar length, the probability that
+    <em>all</em> of them finish by the target is lower — often much lower — than the probability
+    that the critical one does. The correction is simulation, and the gap is usually startling.
+  </p>
+</Callout>
+
+<PythonCell label="Simulation tells a different story">
+{`import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(73)
+
+def pert_beta(a, m, b, lam=4.0):
+    mean = (a + lam * m + b) / (lam + 2)
+    alpha = ((mean - a) * (2 * m - a - b)) / ((m - mean) * (b - a)) if m != mean else 3.0
+    beta = alpha * (b - mean) / (mean - a)
+    return stats.beta(alpha, beta, loc=a, scale=b - a)
+
+distributions = {
+    row["code"]: pert_beta(row["a"], row["m"], row["b"])
+    for _, row in network.iterrows()
+}
+
+trials = 20_000
+finishes = np.empty(trials)
+critical_counts = {code: 0 for code in duration}
+
+for trial in range(trials):
+    sampled = {code: float(dist.rvs(random_state=rng)) for code, dist in distributions.items()}
+    _, trial_finish = schedule(sampled)
+    finishes[trial] = max(trial_finish.values())
+
+    node = max(trial_finish, key=trial_finish.get)
+    while True:
+        critical_counts[node] += 1
+        if not predecessors[node]:
+            break
+        node = max(predecessors[node], key=lambda p: trial_finish[p])
+
+print(f"{'target':>8}{'PERT formula':>15}{'simulation':>13}{'difference':>13}")
+for target in [45, 48, 50, 52, 55, 60]:
+    formula = stats.norm.cdf((target - project_duration) / path_sd)
+    simulated = (finishes <= target).mean()
+    print(f"{target:>8}{formula:>15.2%}{simulated:>13.2%}{simulated - formula:>+13.2%}")
+
+print()
+print(f"expected duration, formula     {project_duration:.2f} days")
+print(f"expected duration, simulation  {finishes.mean():.2f} days")
+print(f"simulation sd                  {finishes.std(ddof=1):.2f} days "
+      f"(formula said {path_sd:.2f})")
+
+print()
+print("How often is each activity on the critical path?")
+for code in sorted(critical_counts, key=lambda c: -critical_counts[c]):
+    share = critical_counts[code] / trials
+    if share > 0.01:
+        print(f"  {code}  {share:>6.1%}  {'#' * int(share * 40)}")
+
+print()
+print("Criticality is not binary. Activities the deterministic analysis")
+print("called non-critical are on the critical path in a real share of")
+print("simulated futures - which is why the formula is optimistic.")
+
+fig, ax = plt.subplots()
+ax.hist(finishes, bins=60)
+ax.axvline(project_duration, linewidth=2)
+ax.axvline(np.percentile(finishes, 90), linewidth=2, linestyle="--")
+ax.set_xlabel("project duration (days)")
+ax.set_ylabel("simulated projects")
+ax.set_title("Deterministic estimate (solid) vs. the 90th percentile (dashed)")`}
+</PythonCell>
+
+<h2 id="crash-costs">Crash cost per day</h2>
+
+**Crashing** is spending money to shorten an activity — overtime, contractors, parallel work.
+Each activity has a normal duration and cost, a minimum achievable ("crash") duration, and a cost
+at that minimum. The **crash cost per day** is
+
+$$
+\text{cost per day} = \frac{C_{\text{crash}} - C_{\text{normal}}}{t_{\text{normal}} - t_{\text{crash}}}
+$$
+
+Two rules govern which activity to crash:
+
+1. **Only critical activities.** Shortening one with slack changes nothing.
+2. **Cheapest first.** Among critical activities, crash the lowest cost per day.
+
+<h2 id="what-to-crash">Choosing what to crash</h2>
+
+The subtlety is that crashing changes the critical path. Shorten it enough and a previously
+near-critical path becomes binding — after which you must shorten **both** paths simultaneously to
+gain another day, at their combined cost.
+
+<PythonCell label="Crashing, one day at a time">
+{`crash_data = pd.DataFrame([
+    # code, max days removable, cost per day
+    ("A", 2, 1200),
+    ("B", 2,  900),
+    ("C", 1,  800),
+    ("D", 5, 1500),
+    ("E", 4, 1100),
+    ("F", 3, 1000),
+    ("G", 2, 2200),
+    ("H", 3, 1800),
+    ("I", 1,  600),
+    ("J", 1, 3000),
+], columns=["code", "max_crash", "cost_per_day"]).set_index("code")
+
+print(crash_data.to_string())
+
+current = dict(duration)
+crashed = {code: 0.0 for code in duration}
+total_cost = 0.0
+history = []
+
+for step in range(24):
+    _, current_finish = schedule(current)
+    current_duration = max(current_finish.values())
+    history.append((current_duration, total_cost))
+
+    # Slack under the current durations.
+    latest = {}
+    for code in reversed(order):
+        latest[code] = min(
+            (latest[s] - current[s] for s in successors[code]), default=current_duration
+        )
+    slack = {c: latest[c] - current_finish[c] for c in current}
+
+    candidates = [
+        c for c in current
+        if slack[c] < 1e-9 and crashed[c] < crash_data.loc[c, "max_crash"]
+    ]
+    if not candidates:
+        print(f"\\nNo further crashing possible at {current_duration:.2f} days.")
+        break
+
+    cheapest = min(candidates, key=lambda c: crash_data.loc[c, "cost_per_day"])
+    current[cheapest] -= 1.0
+    crashed[cheapest] += 1.0
+    total_cost += crash_data.loc[cheapest, "cost_per_day"]
+
+    _, after = schedule(current)
+    gained = current_duration - max(after.values())
+    print(f"step {step + 1:>2}: crash {cheapest} by 1 day "
+          f"(cost {crash_data.loc[cheapest, 'cost_per_day']:>5,}) "
+          f"-> {max(after.values()):.2f} days, saved {gained:.2f}")
+
+print()
+print(f"from {project_duration:.2f} days to {max(schedule(current)[1].values()):.2f} days")
+print(f"total crash cost {total_cost:,.0f}")
+print(f"days removed: " + ", ".join(f"{c} -{int(v)}" for c, v in crashed.items() if v))`}
+</PythonCell>
+
+<PythonCell label="The time-cost trade-off curve">
+{`durations_seen = [h[0] for h in history]
+costs_seen = [h[1] for h in history]
+
+print(f"{'duration':>10}{'crash cost':>13}{'marginal':>12}")
+previous_cost, previous_duration = 0.0, durations_seen[0]
+for d, c in history:
+    marginal = (c - previous_cost) / (previous_duration - d) if previous_duration > d else float("nan")
+    print(f"{d:>10.2f}{c:>13,.0f}" +
+          (f"{marginal:>12,.0f}" if previous_duration > d else f"{'-':>12}"))
+    previous_cost, previous_duration = c, d
+
+fig, ax = plt.subplots()
+ax.plot(durations_seen, costs_seen, marker="o", linewidth=2)
+ax.set_xlabel("project duration (days)")
+ax.set_ylabel("cumulative crash cost")
+ax.set_title("Each extra day saved costs more than the last")
+ax.invert_xaxis()
+
+print()
+print("The marginal cost rises: cheap options are used first, then the")
+print("critical path splits and you must crash two activities to gain")
+print("one day. That convexity is the general shape of schedule compression.")
+
+print()
+penalty_per_day = 2500
+print(f"With a late-delivery penalty of {penalty_per_day:,} per day:")
+best = min(history, key=lambda h: h[1] + penalty_per_day * h[0])
+for d, c in history:
+    total = c + penalty_per_day * d
+    marker = "  <- cheapest overall" if (d, c) == best else ""
+    print(f"  {d:>6.2f} days: crash {c:>8,.0f} + penalty "
+          f"{penalty_per_day * d:>9,.0f} = {total:>9,.0f}{marker}")`}
+</PythonCell>
+
+The final table is how crashing decisions should actually be made: not "how fast can we go?" but
+"where does the total of crash cost plus delay cost bottom out?" Crashing past that point spends
+more than it saves.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does the classical PERT probability overstate the chance of finishing on time?",
+      options: [
+        {
+          text: "It considers only the critical path and ignores that near-critical paths can overrun and become binding.",
+          correct: true,
+          explanation:
+            "Exactly. The project finishes only when *every* path is done, so with several paths of similar length the true probability is lower. Simulation captures this; the formula cannot.",
+        },
+        {
+          text: "Because the central limit theorem does not apply to durations.",
+          explanation:
+            "The CLT approximation is reasonable for a path of several activities. The problem is which paths are considered, not the normal approximation itself.",
+        },
+        {
+          text: "Because activity variances should be multiplied rather than added.",
+          explanation:
+            "Variances of independent quantities add — that part is correct. The omission is the other paths.",
+        },
+      ],
+    },
+    {
+      prompt: "Why crash only critical activities?",
+      options: [
+        {
+          text: "Shortening an activity with slack does not change the project duration at all.",
+          correct: true,
+          explanation:
+            "Right — you would spend money for zero days saved. Only the critical path determines the finish date, until crashing changes which path that is.",
+        },
+        {
+          text: "Non-critical activities cannot be crashed.",
+          explanation:
+            "They usually can be, technically. The point is that doing so buys nothing.",
+        },
+        {
+          text: "Because critical activities are always the cheapest to crash.",
+          explanation:
+            "No relationship holds between criticality and crash cost, which is why the rule is 'critical *and* cheapest', evaluated together at each step.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does the marginal cost of each additional day saved increase?",
+      options: [
+        {
+          text: "Cheap options are exhausted first, and eventually two paths must be crashed together to gain one day.",
+          correct: true,
+          explanation:
+            "Correct, and it produces the characteristic convex time-cost curve. Once the critical path splits, a day costs the sum of two activities' crash rates.",
+        },
+        {
+          text: "Because crashing damages quality, which costs money later.",
+          explanation:
+            "A real concern in practice, but not what drives the convexity here — the model accounts only for direct crash costs.",
+        },
+        {
+          text: "Because the project's variance increases as it is compressed.",
+          explanation:
+            "Compression does tend to raise risk, but the rising marginal cost comes from exhausting cheap options and from paths becoming jointly critical.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="369-377" />

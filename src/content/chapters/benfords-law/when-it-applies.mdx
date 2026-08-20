@@ -1,0 +1,247 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>List the conditions a dataset must meet for Benford's law to apply.</li>
+    <li>Distinguish uniform from random, and see why both fail to conform.</li>
+    <li>Name concrete datasets that do not conform, and say why.</li>
+  </ul>
+</Callout>
+
+The previous lesson made Benford's law look universal. It is not, and the most consequential
+mistake in applying it is testing data that was never going to conform and treating the failure as
+evidence of manipulation.
+
+<h2 id="the-conditions">The conditions</h2>
+
+Four conditions, of which the first is by far the most important.
+
+**1. Several orders of magnitude.** The values must span at least two or three powers of ten. If
+everything sits between 100 and 999, the leading digit is determined by where the range happens to
+fall, not by any law.
+
+**2. No imposed bounds.** Values assigned by convention — postcodes, phone numbers, ID numbers —
+carry no information about magnitude at all. Neither do quantities with a tight physical range,
+like adult human heights in centimetres.
+
+**3. A multiplicative or growth process.** Quantities built by multiplying factors conform;
+quantities built by adding roughly equal contributions tend toward a normal distribution, which
+does not.
+
+**4. No round-number preference.** Human-chosen values cluster at 100, 500, 1,000. Prices ending
+in 99 do the same. Both distort the digit distribution for reasons that have nothing to do with
+fraud.
+
+<Callout title="Test the conditions before testing the data" variant="pitfall">
+  <p>
+    A Benford test on data that fails these conditions will reject conformity almost every time,
+    and the rejection means nothing. Deciding whether the law <em>should</em> apply is a judgement
+    about the generating process, and it has to be made before the statistics — otherwise you are
+    guaranteed to find what you went looking for.
+  </p>
+</Callout>
+
+<h2 id="uniform-and-random">Uniform and random data</h2>
+
+It is worth being precise about two words that get conflated, because the distinction is exactly
+what makes Benford's law counter-intuitive.
+
+**Uniform** means every outcome equally likely. **Random** means not determined in advance.
+
+Naturally occurring values are random in origin but their leading digits are strongly non-uniform.
+Meanwhile a uniform random draw from $[0, 1000)$ is both random and — in its leading digits —
+nearly uniform, precisely because it fails condition 1.
+
+<PythonCell label="Distributions that conform, and distributions that do not">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(64)
+digits = np.arange(1, 10)
+benford = np.log10(1 + 1 / digits)
+
+def leading_digit(values):
+    values = np.abs(np.asarray(values, dtype=float))
+    values = values[values > 0]
+    return (values / 10 ** np.floor(np.log10(values))).astype(int)
+
+def frequencies(values):
+    lead = leading_digit(values)
+    return np.array([(lead == d).mean() for d in digits])
+
+n = 200_000
+samples = {
+    "log-uniform, 4 decades": 10 ** (rng.random(n) * 4 + 1),
+    "lognormal, wide":        rng.lognormal(6, 2.4, n),
+    "products of factors":    np.prod(rng.uniform(0.5, 5, size=(n // 4, 10)), axis=1),
+    "uniform 0-1000":         rng.uniform(0, 1000, n),
+    "normal, mean 500":       np.abs(rng.normal(500, 90, n)),
+    "uniform 100-999":        rng.uniform(100, 999, n),
+}
+
+print(f"{'dataset':<24}" + "".join(f"{d:>7}" for d in digits) + f"{'MAD':>9}")
+print(f"{'Benford':<24}" + "".join(f"{p:>7.3f}" for p in benford) + f"{'-':>9}")
+print("-" * (24 + 7 * 9 + 9))
+for label, values in samples.items():
+    observed = frequencies(values)
+    mad = np.abs(observed - benford).mean()
+    print(f"{label:<24}" + "".join(f"{f:>7.3f}" for f in observed) + f"{mad:>9.4f}")
+
+fig, axes = plt.subplots(2, 3, figsize=(9.5, 5.2))
+for ax, (label, values) in zip(axes.ravel(), samples.items()):
+    observed = frequencies(values)
+    ax.bar(digits - 0.2, observed, width=0.4, label="observed")
+    ax.bar(digits + 0.2, benford, width=0.4, label="Benford")
+    ax.set_title(label, fontsize=8)
+    ax.set_xticks(digits)
+    ax.tick_params(labelsize=7)
+axes[0, 0].legend(fontsize=7)
+plt.tight_layout()`}
+</PythonCell>
+
+The pattern is clear. Wide-spanning multiplicative data conforms closely. The narrow uniform and
+narrow normal samples do not, and their failure has nothing to do with anyone tampering with them.
+
+<PythonCell label="How many orders of magnitude are enough?">
+{`print("Conformity improves as the data spans more decades:")
+print(f"{'decades':>9}{'MAD':>10}   verdict")
+for decades in [0.5, 1, 1.5, 2, 3, 4, 6]:
+    values = 10 ** (rng.random(100_000) * decades + 1)
+    mad = np.abs(frequencies(values) - benford).mean()
+    verdict = ("close conformity" if mad < 0.006
+               else "acceptable" if mad < 0.012
+               else "marginal" if mad < 0.015
+               else "nonconformity")
+    print(f"{decades:>9.1f}{mad:>10.5f}   {verdict}")
+
+print()
+print("Below about two decades the law simply does not apply, and a test")
+print("will reject conformity no matter how honest the data is.")
+
+spans = np.linspace(0.3, 5, 40)
+mads = []
+for decades in spans:
+    values = 10 ** (rng.random(60_000) * decades + 1)
+    mads.append(np.abs(frequencies(values) - benford).mean())
+
+fig, ax = plt.subplots()
+ax.plot(spans, mads, linewidth=2)
+ax.axhline(0.012, linewidth=1, linestyle="--")
+ax.set_xlabel("orders of magnitude spanned")
+ax.set_ylabel("mean absolute deviation from Benford")
+ax.set_title("Conformity requires range")`}
+</PythonCell>
+
+<h2 id="counterexamples">Honest counterexamples</h2>
+
+Datasets that reliably fail, none of them for suspicious reasons:
+
+- **Human heights, adult weights, body temperatures.** Narrow range, additive process.
+- **Postcodes, phone numbers, employee IDs.** Assigned by convention, not measured.
+- **Dice rolls, lottery numbers.** Uniform by design.
+- **Prices ending in .99, or clustered at round numbers.** Human convention dominates.
+- **ATM withdrawals.** Constrained to multiples of the note denomination.
+- **Anything with a floor or a cap.** Regulatory thresholds, minimum order sizes, salary bands.
+
+That last category is the interesting one for fraud detection, because a cap or threshold produces
+non-conformity that *does* mean something — but you have to know the threshold is there to
+interpret it.
+
+<PythonCell label="Round-number preference wrecks the digit distribution">
+{`# Human-chosen amounts: honest data that will fail any Benford test.
+base = 10 ** (rng.random(80_000) * 3.5 + 1.5)
+
+# Round about 40% of them to a "nice" figure, as people do.
+rounded = base.copy()
+mask = rng.random(len(base)) < 0.40
+nice = np.array([10, 20, 25, 50, 100, 200, 250, 500, 1000, 2500, 5000])
+rounded[mask] = nice[np.abs(np.log10(base[mask, None] / nice)).argmin(axis=1)]
+
+# Prices ending in .99, another honest distortion.
+psychological = np.floor(base) + 0.99
+
+print(f"{'dataset':<26}" + "".join(f"{d:>7}" for d in digits) + f"{'MAD':>9}")
+print(f"{'Benford':<26}" + "".join(f"{p:>7.3f}" for p in benford) + f"{'-':>9}")
+for label, values in [
+    ("unrounded amounts", base),
+    ("40% rounded to nice figures", rounded),
+    ("prices ending .99", psychological),
+]:
+    observed = frequencies(values)
+    print(f"{label:<26}" + "".join(f"{f:>7.3f}" for f in observed)
+          + f"{np.abs(observed - benford).mean():>9.4f}")
+
+print()
+print("The rounded series is badly non-conforming, and nobody defrauded")
+print("anyone. This is why a failed test is the START of an investigation")
+print("rather than a conclusion.")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Which dataset would you NOT expect to follow Benford's law?",
+      options: [
+        {
+          text: "Adult human heights in centimetres.",
+          correct: true,
+          explanation:
+            "Right — they span well under one order of magnitude and arise from an additive process, so almost every value starts with 1. Both key conditions fail.",
+        },
+        {
+          text: "Populations of the world's towns and cities.",
+          explanation:
+            "A textbook conforming dataset: many orders of magnitude, driven by multiplicative growth, no imposed bounds.",
+        },
+        {
+          text: "Amounts on a company's supplier invoices.",
+          explanation:
+            "Usually conforms well, spanning several orders of magnitude with prices built multiplicatively — which is exactly why Benford tests are used in auditing.",
+        },
+      ],
+    },
+    {
+      prompt: "A dataset of honest expense claims fails a Benford test. What is the most likely explanation?",
+      options: [
+        {
+          text: "Round-number preference — people claim £50 and £100 rather than £47.31.",
+          correct: true,
+          explanation:
+            "Exactly. Human-chosen amounts cluster on round figures, which distorts the leading-digit distribution for entirely innocent reasons. A failed test is a prompt to investigate, not a finding.",
+        },
+        {
+          text: "The claims must have been manipulated.",
+          explanation:
+            "That is the conclusion the test cannot support on its own. Several innocent mechanisms produce non-conformity, and this is one of the most common.",
+        },
+        {
+          text: "The sample is too large.",
+          explanation:
+            "Large samples make tests *more* sensitive to small deviations, which is a real issue for chi-square — but round-number preference is the substantive cause here.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does a uniform sample from [0, 1000) fail to conform?",
+      options: [
+        {
+          text: "It spans too little range in log terms, and its magnitudes are not multiplicatively generated.",
+          correct: true,
+          explanation:
+            "Right. Benford requires the mantissa to be spread uniformly across the log scale; a bounded uniform draw concentrates it, so the leading digits come out roughly uniform instead.",
+        },
+        {
+          text: "Because it is random, and Benford applies only to deterministic data.",
+          explanation:
+            "Benford applies to random data all the time — that is the point. Randomness is not the issue; range and generating process are.",
+        },
+        {
+          text: "Because uniform distributions have no leading digit.",
+          explanation:
+            "Every positive number has a leading digit. The question is only how those digits are distributed.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="324-330" />

@@ -102,6 +102,15 @@ export function extractImports(code) {
   return modules;
 }
 
+/** Dataset filenames a snippet opens, so declarations can be checked too. */
+export function extractDatasets(code) {
+  const files = new Set();
+  const pattern = /["']([A-Za-z0-9_-]+\.csv)["']/g;
+  let match;
+  while ((match = pattern.exec(code)) !== null) files.add(match[1]);
+  return files;
+}
+
 /** Import name -> the Pyodide package that provides it. */
 const MODULE_TO_PACKAGE = {
   numpy: "numpy",
@@ -192,8 +201,8 @@ async function main() {
     const declared = new Set(lesson.runtime.packages);
     const required = new Set();
     for (const cell of cells) {
-      for (const module of extractImports(cell.code)) {
-        const pkg = MODULE_TO_PACKAGE[module];
+      for (const imported of extractImports(cell.code)) {
+        const pkg = MODULE_TO_PACKAGE[imported];
         if (pkg) required.add(pkg);
       }
     }
@@ -213,6 +222,30 @@ async function main() {
     const unused = [...declared].filter((pkg) => !required.has(pkg));
     if (unused.length > 0) {
       warnings.push(`${key} declares ${unused.join(", ")} but never imports it`);
+    }
+
+    // Same check for datasets: a CSV opened but not declared is never mounted.
+    const declaredData = new Set(lesson.runtime.datasets);
+    const usedData = new Set();
+    for (const cell of cells) {
+      for (const name of extractDatasets(cell.code)) usedData.add(name);
+    }
+
+    for (const name of usedData) {
+      if (!declaredData.has(name)) {
+        problems.push({
+          key,
+          label: `undeclared dataset "${name}"`,
+          detail:
+            `opened by a code cell but missing from runtime.datasets in content.ts — ` +
+            `the file would not be mounted, raising FileNotFoundError`,
+        });
+      }
+    }
+
+    const unusedData = [...declaredData].filter((name) => !usedData.has(name));
+    if (unusedData.length > 0) {
+      warnings.push(`${key} declares dataset ${unusedData.join(", ")} but never reads it`);
     }
 
     // Each lesson gets a clean namespace, matching a fresh page load; cells

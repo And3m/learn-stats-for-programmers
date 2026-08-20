@@ -1,0 +1,267 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Identify which constraints are worth spending money to relax.</li>
+    <li>Interpret a shadow price and know its range of validity.</li>
+    <li>Stress-test a solution against uncertain inputs.</li>
+  </ul>
+</Callout>
+
+The optimal plan is rarely the most valuable output of a linear program. What managers actually
+want is the answer to two questions: *what should we invest in?* and *how wrong can our estimates
+be before this plan stops being right?*
+
+Both are answered from the same solve.
+
+<h2 id="binding-constraints">Binding constraints</h2>
+
+At the optimum, some resources are exhausted and some are not.
+
+A **binding** constraint has zero slack. It is what stopped the objective from going higher, so
+more of it is worth something. A **non-binding** constraint has slack left over — more of it is
+worth exactly nothing, because you already cannot use what you have.
+
+This one distinction is the highest-value output of the model. Every proposal to buy more capacity
+can be checked against it in seconds.
+
+<PythonCell label="Where the money is">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from scipy.optimize import linprog
+
+products = ["standard", "deluxe", "premium"]
+resources = ["machining (hrs)", "assembly (hrs)", "aluminium (kg)"]
+
+profit = np.array([40.0, 68.0, 112.0])
+usage = np.array([
+    [1.2, 2.0, 3.2],
+    [0.5, 1.6, 2.6],
+    [3.0, 4.5, 7.0],
+])
+available = np.array([400.0, 300.0, 1200.0])
+bounds = [(20, None), (0, None), (0, 60)]
+
+def solve(limits):
+    return linprog(c=-profit, A_ub=usage, b_ub=limits, bounds=bounds, method="highs")
+
+base = solve(available)
+print(f"optimal profit: {-base.fun:,.2f}")
+print(f"plan: " + ", ".join(f"{n} {q:.2f}" for n, q in zip(products, base.x)))
+print()
+
+print(f"{'resource':<18}{'slack':>10}   {'value of +1 unit':>18}")
+for index, (name, spare) in enumerate(zip(resources, base.slack)):
+    bumped = available.copy()
+    bumped[index] += 1
+    gain = -solve(bumped).fun + base.fun
+    label = "BINDING" if spare < 1e-6 else f"slack {spare:,.1f}"
+    print(f"{name:<18}{label:>10}   {gain:>18,.4f}")
+
+print()
+print("Buying aluminium would be money burned - there are hundreds of")
+print("kilograms already sitting unused.")`}
+</PythonCell>
+
+<h2 id="shadow-prices">Shadow prices</h2>
+
+The number in that last column is the **shadow price** (or dual value): the change in the
+objective from one additional unit of a resource. It is the most you should rationally pay for
+that extra unit.
+
+HiGHS reports these directly, so you do not need to re-solve — though re-solving is a good way to
+confirm you are reading them correctly.
+
+Two properties matter.
+
+**Non-binding constraints have a shadow price of exactly zero.** More of an already-surplus
+resource cannot help.
+
+**Shadow prices are marginal and local.** A machining shadow price of £32.61 does not mean 100
+extra hours are worth £3,261. As you add capacity the optimal plan shifts, and eventually a
+*different* constraint becomes binding — at which point the shadow price drops, often to zero.
+Every shadow price carries an implied validity range, and extrapolating past it is the most common
+misuse of this output.
+
+<PythonCell label="Shadow prices, and where they stop applying">
+{`print("Shadow prices reported by HiGHS (sign convention: negative because we minimise):")
+for name, marginal, spare in zip(resources, base.ineqlin.marginals, base.slack):
+    print(f"  {name:<18} {-marginal:>10.4f} per unit   "
+          f"({'binding' if spare < 1e-6 else 'slack -> zero, as expected'})")
+
+print()
+print("But the price only holds over a range. Adding machining hours:")
+print(f"{'extra hours':>12}{'profit':>14}{'marginal value':>17}")
+
+previous = -base.fun
+for extra in [0, 25, 50, 100, 200, 400, 800]:
+    bumped = available.copy()
+    bumped[0] += extra
+    value = -solve(bumped).fun
+    marginal = (value - previous) / 25 if extra else float("nan")
+    print(f"{extra:>12}{value:>14,.2f}"
+          + (f"{marginal:>17.4f}" if extra else f"{'-':>17}"))
+    previous = value
+
+extras = np.linspace(0, 700, 60)
+profits = []
+for extra in extras:
+    bumped = available.copy()
+    bumped[0] += extra
+    profits.append(-solve(bumped).fun)
+
+fig, ax = plt.subplots()
+ax.plot(extras, profits, linewidth=2)
+ax.set_xlabel("additional machining hours")
+ax.set_ylabel("optimal profit")
+ax.set_title("Piecewise linear: each kink is a new constraint becoming binding")
+
+print()
+print("The curve flattens. Past a point, machining is no longer the")
+print("bottleneck and further hours are worth nothing.")`}
+</PythonCell>
+
+<Callout title="A shadow price is an upper bound on what to pay" variant="warning">
+  <p>
+    If overtime machining costs £25 an hour and the shadow price is £32.61, the first extra hours
+    are worth buying. That does not make 500 hours worth buying — check the range first. And the
+    shadow price assumes everything else about the formulation is correct, so it inherits every
+    error in the model's inputs.
+  </p>
+</Callout>
+
+<h2 id="sensitivity">Sensitivity analysis</h2>
+
+The profit coefficients and resource limits are estimates. A responsible answer says how much they
+would have to be wrong before the recommendation changes.
+
+Two complementary approaches:
+
+**One-at-a-time.** Vary one input across a plausible range, holding the rest fixed, and watch the
+plan. Simple, and it isolates which inputs matter.
+
+**Scenario sampling.** Perturb every uncertain input simultaneously from its own distribution,
+re-solve many times, and look at the distribution of outcomes. This is Monte Carlo simulation —
+chapter&nbsp;9 — applied to an optimisation, and it captures interactions that one-at-a-time
+analysis misses.
+
+<PythonCell label="Two kinds of stress test">
+{`print("ONE AT A TIME: how sensitive is the plan to the deluxe margin?")
+print(f"{'deluxe profit':>15}{'standard':>10}{'deluxe':>9}{'premium':>9}{'total':>12}")
+for margin in [50, 60, 68, 76, 85, 95]:
+    adjusted = profit.copy()
+    adjusted[1] = margin
+    outcome = linprog(c=-adjusted, A_ub=usage, b_ub=available, bounds=bounds, method="highs")
+    print(f"{margin:>15}{outcome.x[0]:>10.1f}{outcome.x[1]:>9.1f}"
+          f"{outcome.x[2]:>9.1f}{-outcome.fun:>12,.0f}")
+
+print()
+print("SCENARIO SAMPLING: every margin uncertain by +/-12%, 2000 draws")
+rng = np.random.default_rng(19)
+draws = 2000
+totals = np.empty(draws)
+plans = np.empty((draws, 3))
+
+for draw in range(draws):
+    perturbed = profit * rng.uniform(0.88, 1.12, size=3)
+    outcome = linprog(c=-perturbed, A_ub=usage, b_ub=available, bounds=bounds, method="highs")
+    plans[draw] = outcome.x
+    totals[draw] = profit @ outcome.x        # value the plan at the TRUE margins
+
+print(f"  profit under the baseline plan      {profit @ base.x:>12,.2f}")
+print(f"  mean profit of the perturbed plans  {totals.mean():>12,.2f}")
+print(f"  5th percentile                      {np.percentile(totals, 5):>12,.2f}")
+print(f"  worst case seen                     {totals.min():>12,.2f}")
+
+print()
+print("  how often each product appears in the plan:")
+for name, column in zip(products, plans.T):
+    print(f"    {name:<10} produced in {(column > 1e-6).mean():>6.1%} of scenarios, "
+          f"median {np.median(column):>7.1f} units")
+
+fig, ax = plt.subplots()
+ax.hist(totals, bins=40)
+ax.axvline(profit @ base.x, linewidth=2)
+ax.set_xlabel("profit at true margins")
+ax.set_ylabel("scenarios")
+ax.set_title("Cost of optimising against mis-estimated margins")`}
+</PythonCell>
+
+The final experiment is the honest one. Each scenario optimises against *estimated* margins, then
+the resulting plan is valued at the *true* margins — which is exactly what happens in reality. The
+gap between the baseline profit and the mean of that distribution is the cost of estimation error,
+and it is usually much smaller than people fear. Near the optimum the objective is flat, so a
+slightly wrong plan is only slightly worse.
+
+That flatness is the reassuring conclusion of this chapter: linear programs are generally robust
+to moderate input error. What they are not robust to is a **missing constraint**, which produces a
+plan that is optimal for a problem you do not have.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Aluminium has 297 kg of slack at the optimum. What is its shadow price?",
+      options: [
+        {
+          text: "Zero — more of an already-surplus resource cannot improve the objective.",
+          correct: true,
+          explanation:
+            "Right, and this is the practical payoff of the model: it tells you immediately that buying aluminium capacity is money wasted, however intuitive it might seem.",
+        },
+        {
+          text: "Its market price per kilogram.",
+          explanation:
+            "Market price is what it costs to buy. Shadow price is what an extra unit is worth *to this plan* — and here that is nothing, because 297 kg already sit unused.",
+        },
+        {
+          text: "Proportional to how much aluminium each product uses.",
+          explanation:
+            "Consumption rates appear in the constraint, but the shadow price depends on whether the constraint binds. This one does not.",
+        },
+      ],
+    },
+    {
+      prompt: "Machining has a shadow price of £32.61/hour. Are 500 extra hours worth £16,305?",
+      options: [
+        {
+          text: "No — shadow prices are marginal and local; another constraint becomes binding well before 500 hours.",
+          correct: true,
+          explanation:
+            "Exactly. The profit-versus-capacity curve is piecewise linear with kinks where the binding set changes, and it flattens once machining stops being the bottleneck.",
+        },
+        {
+          text: "Yes — shadow prices are linear by construction.",
+          explanation:
+            "The objective is linear in the decision variables, but the *optimal value* as a function of a resource limit is only piecewise linear, and its slope falls at each kink.",
+        },
+        {
+          text: "Only if the other constraints are also relaxed proportionally.",
+          explanation:
+            "Relaxing everything together would indeed keep value flowing, but that is a different question. The shadow price applies to relaxing machining alone.",
+        },
+      ],
+    },
+    {
+      prompt: "Scenario sampling perturbs the profit margins by ±12%. Why value each plan at the TRUE margins?",
+      options: [
+        {
+          text: "Because it measures what actually happens: you optimise against estimates and live with the real outcome.",
+          correct: true,
+          explanation:
+            "Correct. Valuing at the estimated margins would just report the optimum of a hypothetical world. Valuing at the true margins isolates the genuine cost of estimation error.",
+        },
+        {
+          text: "Because the true margins produce a larger and more impressive number.",
+          explanation:
+            "They typically produce a *smaller* number than each scenario's own optimum — that gap is precisely the quantity of interest.",
+        },
+        {
+          text: "Because linprog requires consistent coefficients between runs.",
+          explanation:
+            "linprog has no such requirement. The choice is about what question the experiment answers.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="239-241" />

@@ -1,0 +1,345 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Distinguish common-cause from special-cause variation.</li>
+    <li>Explain where three-sigma control limits come from.</li>
+    <li>Compute capability indices and say why "in control" is not "good enough".</li>
+  </ul>
+</Callout>
+
+Every process varies. The question a control chart answers is whether today's variation is the
+variation the process always has, or evidence that something changed.
+
+Getting that distinction wrong is expensive in both directions — and the two errors have names.
+
+<h2 id="common-vs-special">Common and special cause</h2>
+
+**Common-cause** variation is inherent in the process: the accumulated effect of many small
+factors nobody controls individually. It is stable, predictable in aggregate, and reducing it
+requires changing the process itself.
+
+**Special-cause** variation comes from something identifiable and external: a worn tool, a new
+supplier, an untrained operator, a change in ambient temperature. It is not part of the process's
+normal behaviour, and it can be found and removed.
+
+W. Edwards Deming's framing of the two mistakes is the most useful thing in this chapter:
+
+- **Tampering** — reacting to common-cause variation as though it were special. Adjusting a
+  process that was behaving normally, which reliably makes it *worse*, because you have added your
+  correction to noise that was going to revert anyway.
+- **Neglect** — treating special-cause variation as normal noise, and missing a real change.
+
+A control chart is a decision rule for telling them apart.
+
+<PythonCell label="Tampering makes things worse">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(29)
+
+target = 50.0
+n = 300
+noise = rng.normal(0, 0.5, n)
+
+# A stable process, left alone.
+untouched = target + noise
+
+# The same process, "corrected" toward target after every observation.
+tampered = np.empty(n)
+adjustment = 0.0
+for i in range(n):
+    tampered[i] = target + noise[i] + adjustment
+    adjustment -= (tampered[i] - target)      # over-correct the deviation
+
+print(f"{'strategy':<24}{'mean':>9}{'sd':>9}{'range':>9}")
+print(f"{'leave it alone':<24}{untouched.mean():>9.3f}{untouched.std():>9.3f}"
+      f"{np.ptp(untouched):>9.3f}")
+print(f"{'adjust every time':<24}{tampered.mean():>9.3f}{tampered.std():>9.3f}"
+      f"{np.ptp(tampered):>9.3f}")
+
+print()
+print(f"Adjusting inflated the standard deviation by "
+      f"{tampered.std() / untouched.std():.2f}x.")
+print("This is Deming's funnel experiment: responding to common-cause")
+print("variation as if it were signal makes the process worse, every time.")
+
+fig, ax = plt.subplots()
+ax.plot(untouched, linewidth=0.8, label="left alone")
+ax.plot(tampered, linewidth=0.8, label="adjusted after every reading")
+ax.axhline(target, linewidth=1.5)
+ax.set_ylabel("measurement")
+ax.set_title("Tampering amplifies the variation it tries to remove")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+<h2 id="control-limits">Where the limits come from</h2>
+
+A control chart plots a statistic over time against three lines:
+
+- **Centre line (CL)** — the process average.
+- **Upper control limit (UCL)** — three standard deviations above.
+- **Lower control limit (LCL)** — three standard deviations below.
+
+$$
+UCL = \bar{x} + 3\hat{\sigma}, \qquad LCL = \bar{x} - 3\hat{\sigma}
+$$
+
+Why three? It is a deliberate trade-off between the two errors. Under a stable, roughly normal
+process, 99.73% of points fall inside three sigma, so a false alarm occurs about once every 370
+samples. Tighter limits catch real shifts sooner but drown you in false alarms — and false alarms
+lead to tampering. Wider limits miss real changes.
+
+<Callout title="Control limits are not specification limits" variant="pitfall">
+  <p>
+    <strong>Control limits</strong> come from the process: they describe what it actually does.{" "}
+    <strong>Specification limits</strong> come from the customer or the design: they describe what
+    is acceptable. They are computed from entirely different information and putting spec limits on
+    a control chart is a classic error — a process can be perfectly in control and producing
+    entirely out-of-spec parts, or wildly out of control while every part still passes.
+  </p>
+</Callout>
+
+<PythonCell label="A first control chart">
+{`import pandas as pd
+
+measurements = pd.read_csv("qc-measurements.csv")
+print(f"{measurements['subgroup'].nunique()} subgroups of "
+      f"{measurements.groupby('subgroup').size().iloc[0]} observations")
+
+subgroup_means = measurements.groupby("subgroup")["value"].mean()
+subgroup_ranges = measurements.groupby("subgroup")["value"].apply(lambda v: v.max() - v.min())
+
+# Estimate sigma from the average range, using the d2 constant for n = 5.
+d2 = 2.326
+grand_mean = subgroup_means.mean()
+mean_range = subgroup_ranges.mean()
+sigma = mean_range / d2
+n_per_subgroup = 5
+sigma_of_mean = sigma / np.sqrt(n_per_subgroup)
+
+ucl = grand_mean + 3 * sigma_of_mean
+lcl = grand_mean - 3 * sigma_of_mean
+
+print()
+print(f"grand mean (CL)           {grand_mean:>9.4f}")
+print(f"mean range                {mean_range:>9.4f}")
+print(f"sigma estimated from R    {sigma:>9.4f}   (Rbar / d2)")
+print(f"sigma of subgroup means   {sigma_of_mean:>9.4f}   (sigma / sqrt(n))")
+print(f"UCL                       {ucl:>9.4f}")
+print(f"LCL                       {lcl:>9.4f}")
+
+outside = subgroup_means[(subgroup_means > ucl) | (subgroup_means < lcl)]
+print()
+print(f"{len(outside)} subgroups outside the control limits: "
+      f"{list(outside.index)}")
+
+fig, ax = plt.subplots(figsize=(9.5, 3.8))
+ax.plot(subgroup_means.index, subgroup_means.values, marker="o", markersize=3.5, linewidth=1)
+ax.axhline(grand_mean, linewidth=1.5)
+ax.axhline(ucl, linewidth=1.2, linestyle="--")
+ax.axhline(lcl, linewidth=1.2, linestyle="--")
+ax.scatter(outside.index, outside.values, s=60, zorder=5, marker="s")
+ax.set_xlabel("subgroup")
+ax.set_ylabel("subgroup mean")
+ax.set_title("x-bar chart: the process shifts partway through")`}
+</PythonCell>
+
+The chart shows the shift that was built into this data at subgroup 31. Some points cross the
+limit, but the more telling signal is that the run after 31 sits persistently above the centre
+line — which single-point rules alone would miss.
+
+<PythonCell label="Run rules catch what single points do not">
+{`# The Western Electric rules: patterns that are individually plausible but
+# jointly very unlikely under a stable process.
+zone = sigma_of_mean
+values = subgroup_means.values
+index = subgroup_means.index.to_numpy()
+
+def rule_1(v):
+    return np.abs(v - grand_mean) > 3 * zone
+
+def rule_2(v):
+    """2 of 3 consecutive points beyond 2 sigma on the same side."""
+    flags = np.zeros(len(v), dtype=bool)
+    for i in range(len(v) - 2):
+        window = v[i:i + 3]
+        for side in (1, -1):
+            if ((side * (window - grand_mean)) > 2 * zone).sum() >= 2:
+                flags[i:i + 3] = True
+    return flags
+
+def rule_3(v):
+    """4 of 5 consecutive points beyond 1 sigma on the same side."""
+    flags = np.zeros(len(v), dtype=bool)
+    for i in range(len(v) - 4):
+        window = v[i:i + 5]
+        for side in (1, -1):
+            if ((side * (window - grand_mean)) > zone).sum() >= 4:
+                flags[i:i + 5] = True
+    return flags
+
+def rule_4(v):
+    """8 consecutive points on the same side of the centre line."""
+    flags = np.zeros(len(v), dtype=bool)
+    side = np.sign(v - grand_mean)
+    for i in range(len(v) - 7):
+        if abs(side[i:i + 8].sum()) == 8:
+            flags[i:i + 8] = True
+    return flags
+
+rules = {
+    "1: beyond 3 sigma": rule_1(values),
+    "2: 2 of 3 beyond 2 sigma": rule_2(values),
+    "3: 4 of 5 beyond 1 sigma": rule_3(values),
+    "4: 8 in a row one side": rule_4(values),
+}
+
+print(f"{'rule':<28}{'subgroups flagged':>20}")
+for name, flags in rules.items():
+    flagged = index[flags]
+    print(f"{name:<28}{str(list(flagged))[:60]:>20}" if len(flagged) <= 8
+          else f"{name:<28}{len(flagged)} subgroups, first at {flagged[0]}")
+
+any_rule = np.any(list(rules.values()), axis=0)
+print()
+print(f"first subgroup flagged by any rule: {index[any_rule][0]}")
+print("The shift was introduced at subgroup 31. Run rules detect it well")
+print("before any single point crosses a control limit.")`}
+</PythonCell>
+
+<h2 id="capability">Capability indices</h2>
+
+A process in control is *predictable*. Whether it is *good enough* is a separate question,
+answered by comparing its spread against the specification limits.
+
+$$
+C_p = \frac{USL - LSL}{6\sigma}
+\qquad
+C_{pk} = \min\left(\frac{USL - \mu}{3\sigma},\; \frac{\mu - LSL}{3\sigma}\right)
+$$
+
+$C_p$ asks whether the process is *narrow* enough, assuming it is centred. $C_{pk}$ also penalises
+being off-centre. When they are equal the process is perfectly centred; $C_{pk}$ well below $C_p$
+means recentring would help more than reducing variation.
+
+The convention: $C_{pk} \ge 1.33$ is capable, $\ge 1.0$ is marginal, below 1.0 produces
+out-of-spec output as a matter of routine.
+
+<PythonCell label="Capability, before and after the shift">
+{`lower_spec, upper_spec = 48.5, 51.5
+
+def capability(values, sigma_estimate=None):
+    mu = values.mean()
+    sigma_hat = sigma_estimate if sigma_estimate else values.std(ddof=1)
+    cp = (upper_spec - lower_spec) / (6 * sigma_hat)
+    cpk = min((upper_spec - mu) / (3 * sigma_hat), (mu - lower_spec) / (3 * sigma_hat))
+    return mu, sigma_hat, cp, cpk
+
+def verdict(cpk):
+    return ("capable" if cpk >= 1.33 else
+            "marginal" if cpk >= 1.0 else "NOT CAPABLE")
+
+before = measurements[measurements["subgroup"] < 31]["value"]
+after = measurements[measurements["subgroup"] >= 31]["value"]
+
+print(f"specification: {lower_spec} to {upper_spec}")
+print()
+print(f"{'period':<22}{'mean':>9}{'sigma':>9}{'Cp':>8}{'Cpk':>8}   verdict")
+for label, values in [("subgroups 1-30", before), ("subgroups 31-60", after),
+                      ("all data", measurements['value'])]:
+    mu, sd, cp, cpk = capability(values)
+    print(f"{label:<22}{mu:>9.4f}{sd:>9.4f}{cp:>8.3f}{cpk:>8.3f}   {verdict(cpk)}")
+
+print()
+from scipy import stats
+mu, sd, cp, cpk = capability(after)
+out_of_spec = stats.norm.sf(upper_spec, mu, sd) + stats.norm.cdf(lower_spec, mu, sd)
+print(f"After the shift, expected out-of-spec rate: {out_of_spec:.4%} "
+      f"({out_of_spec * 1_000_000:,.0f} parts per million)")
+
+mu_b, sd_b, _, _ = capability(before)
+out_before = stats.norm.sf(upper_spec, mu_b, sd_b) + stats.norm.cdf(lower_spec, mu_b, sd_b)
+print(f"Before the shift:                          {out_before:.4%} "
+      f"({out_before * 1_000_000:,.0f} ppm)")
+
+fig, ax = plt.subplots()
+grid = np.linspace(47.5, 52.5, 400)
+for label, values in [("before", before), ("after", after)]:
+    m, s, _, _ = capability(values)
+    ax.plot(grid, stats.norm.pdf(grid, m, s), linewidth=2, label=label)
+ax.axvline(lower_spec, linewidth=1.5, linestyle="--")
+ax.axvline(upper_spec, linewidth=1.5, linestyle="--")
+ax.set_xlabel("measurement")
+ax.set_title("Specification limits (dashed) against the process distribution")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "An operator adjusts the machine every time a reading is slightly off target. What happens?",
+      options: [
+        {
+          text: "Variation increases — this is tampering, reacting to common-cause noise as if it were signal.",
+          correct: true,
+          explanation:
+            "Right, and Deming's funnel experiment demonstrates it. The correction is added to noise that would have reverted anyway, roughly doubling the standard deviation.",
+        },
+        {
+          text: "Variation decreases, since the process is kept near target.",
+          explanation:
+            "Intuitive and wrong. Each adjustment responds to a deviation that was already going to revert, so the correction becomes an additional source of variation.",
+        },
+        {
+          text: "Nothing changes — the adjustments average out.",
+          explanation:
+            "They do not cancel; they compound. The mean may stay near target while the spread grows substantially.",
+        },
+      ],
+    },
+    {
+      prompt: "Why are control limits set at three sigma rather than two?",
+      options: [
+        {
+          text: "It balances false alarms against missed shifts — three sigma gives roughly one false alarm per 370 samples.",
+          correct: true,
+          explanation:
+            "Correct. Tighter limits catch real shifts sooner but generate false alarms, and false alarms lead to tampering, which is worse than the problem being solved.",
+        },
+        {
+          text: "Because three sigma covers exactly 100% of a normal distribution.",
+          explanation:
+            "It covers 99.73%. The remaining 0.27% is precisely the false-alarm rate the choice is calibrated around.",
+        },
+        {
+          text: "Because specification limits are conventionally set at three sigma.",
+          explanation:
+            "Specification limits come from the customer or the design and have no necessary relationship to the process's sigma. Conflating the two is a common and serious error.",
+        },
+      ],
+    },
+    {
+      prompt: "A process has Cp = 1.8 but Cpk = 0.7. What does that tell you?",
+      options: [
+        {
+          text: "The spread is fine but the process is badly off-centre — recentring would fix it.",
+          correct: true,
+          explanation:
+            "Exactly. Cp only measures width; Cpk penalises the offset. A large gap between them points at centring rather than variation reduction, and centring is usually far cheaper.",
+        },
+        {
+          text: "The process is capable, since Cp exceeds 1.33.",
+          explanation:
+            "Cpk is the binding figure. At 0.7 the process is producing out-of-spec output routinely despite having ample width.",
+        },
+        {
+          text: "The measurements are not normally distributed.",
+          explanation:
+            "Capability indices do assume approximate normality, but a Cp/Cpk gap specifically indicates an off-centre mean, not non-normality.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="380-388" />

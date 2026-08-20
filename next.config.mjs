@@ -11,6 +11,8 @@ const withMDX = createMDX({
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   pageExtensions: ["ts", "tsx", "md", "mdx"],
+  // The project README documents this repo; no generated agent files needed.
+  agentRules: false,
 };
 
 export default withMDX(nextConfig);

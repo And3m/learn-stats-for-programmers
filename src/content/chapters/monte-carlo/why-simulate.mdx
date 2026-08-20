@@ -1,0 +1,228 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what problems Monte Carlo simulation solves that algebra cannot.</li>
+    <li>Explain why sampling converges on the right answer.</li>
+    <li>Estimate how many trials a target precision requires.</li>
+  </ul>
+</Callout>
+
+<h2 id="the-idea">The idea</h2>
+
+Monte Carlo simulation replaces a calculation you cannot do with an experiment you can. Instead of
+deriving the distribution of an outcome, you generate that outcome thousands of times from random
+inputs and look at what you get.
+
+It is named after the casino in Monaco, and it earned its place in serious work on the Manhattan
+Project, where the neutron-diffusion problems were analytically hopeless but straightforward to
+sample.
+
+The procedure is always the same three steps:
+
+1. Build a model that turns random inputs into an outcome.
+2. Run it many times with inputs drawn from their distributions.
+3. Study the distribution of outcomes.
+
+The output is not a number. It is a **distribution** — which is the honest form of an answer under
+uncertainty, and the reason simulation is often preferable to a point estimate even when a
+closed-form solution exists.
+
+<h2 id="when-to-reach-for-it">When to reach for it</h2>
+
+Simulation earns its keep when any of the following hold.
+
+**The algebra is intractable.** The distribution of a sum of independent normals is a normal, and
+you can write it down. The distribution of a *maximum* of correlated lognormals passed through a
+piecewise payoff function is not something you will derive.
+
+**The problem has path dependence.** A project's completion time depends on which tasks slipped
+and in what order; an inventory policy depends on the sequence of demands. Chapter&nbsp;13's
+project risk analysis and chapter&nbsp;14's process behaviour are both of this kind.
+
+**You need a full distribution, not an average.** "Expected profit is £2m" is much less useful
+than "there is a 12% chance of losing money." Tail probabilities are exactly what simulation is
+good at and what averages hide.
+
+**The model is a black box.** If the outcome comes out of a solver, a spreadsheet or a piece of
+code, you can still sample its inputs — as chapter&nbsp;8's scenario analysis did to a linear
+program.
+
+<Callout title="Simulation is not a substitute for understanding" variant="warning">
+  <p>
+    A simulation is only as good as the model inside it. If you assume independence between inputs
+    that actually move together, or use a normal distribution for a quantity with a fat tail, the
+    simulation will produce a precise, confident and wrong answer — and its apparent sophistication
+    makes the error harder to spot than it would be in a one-line formula.
+  </p>
+</Callout>
+
+<h2 id="law-of-large-numbers">The law of large numbers</h2>
+
+Why is sampling legitimate? Because of the law of large numbers: as the number of independent
+trials grows, the sample mean converges to the true expected value.
+
+$$
+\bar{X}_n = \frac{1}{n}\sum_{i=1}^{n} X_i \;\longrightarrow\; E[X] \quad \text{as } n \to \infty
+$$
+
+The central limit theorem sharpens this into something operational. The standard error of the
+estimate is
+
+$$
+SE = \frac{\sigma}{\sqrt{n}}
+$$
+
+The $\sqrt{n}$ is the crucial and slightly disappointing part. Halving your error requires
+**four times** as many trials. Getting one more decimal digit requires a hundred times as many.
+Simulation converges reliably but slowly, which is why the question "how many trials?" deserves a
+real answer rather than a round number.
+
+<PythonCell label="Convergence, and how slow it is">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(11)
+
+# A quantity with no convenient closed form: the maximum of three
+# correlated delivery times, each lognormal.
+def simulate(n):
+    base = rng.normal(0, 1, n)                     # a shared latent factor
+    times = np.empty((n, 3))
+    for k in range(3):
+        idiosyncratic = rng.normal(0, 1, n)
+        times[:, k] = np.exp(1.6 + 0.35 * (0.6 * base + 0.8 * idiosyncratic))
+    return times.max(axis=1)                        # the slowest of the three
+
+sample = simulate(200_000)
+truth = sample.mean()
+print(f"reference estimate from 200,000 trials: {truth:.4f} days")
+print()
+
+print(f"{'trials':>10}{'estimate':>12}{'error':>10}{'SE':>10}")
+for n in [10, 100, 1_000, 10_000, 100_000]:
+    subsample = sample[:n]
+    estimate = subsample.mean()
+    se = subsample.std(ddof=1) / np.sqrt(n)
+    print(f"{n:>10,}{estimate:>12.4f}{abs(estimate - truth):>10.4f}{se:>10.4f}")
+
+print()
+print("Each 100x increase in trials buys one decimal place. That is the")
+print("sqrt(n) rate, and it is why simulation is used where algebra fails")
+print("rather than where algebra is merely tedious.")
+
+running = np.cumsum(sample) / np.arange(1, len(sample) + 1)
+fig, ax = plt.subplots()
+ax.plot(np.arange(1, 20_001), running[:20_000], linewidth=1)
+ax.axhline(truth, linewidth=1.5)
+ax.set_xscale("log")
+ax.set_xlabel("trials")
+ax.set_ylabel("running mean")
+ax.set_title("The running mean settles - slowly")`}
+</PythonCell>
+
+<PythonCell label="How many trials do you actually need?">
+{`# Work backwards from a precision target.
+sigma = sample.std(ddof=1)
+print(f"sample standard deviation: {sigma:.4f}")
+print()
+print(f"{'target +/- (95%)':>18}{'trials needed':>16}")
+for tolerance in [0.5, 0.2, 0.1, 0.05, 0.01]:
+    needed = (1.96 * sigma / tolerance) ** 2
+    print(f"{tolerance:>18.2f}{needed:>16,.0f}")
+
+print()
+print("Estimating a probability rather than a mean is easier, because the")
+print("variance of an indicator is bounded by 0.25:")
+print(f"{'target +/- (95%)':>18}{'trials needed':>16}")
+for tolerance in [0.05, 0.02, 0.01, 0.005, 0.001]:
+    needed = (1.96 ** 2) * 0.25 / tolerance ** 2
+    print(f"{tolerance:>18.3f}{needed:>16,.0f}")
+
+print()
+# Tail probabilities are the hard case: rare events need many trials
+# simply to be observed a reasonable number of times.
+print("Trials needed to see a rare event about 100 times:")
+for probability in [0.1, 0.01, 0.001, 0.0001]:
+    print(f"  P = {probability:<8} -> {100 / probability:>12,.0f} trials")
+
+for threshold in [10, 15, 20]:
+    hits = (sample > threshold).mean()
+    print()
+    print(f"P(slowest delivery > {threshold} days) = {hits:.5f} "
+          f"({int(hits * len(sample)):,} of {len(sample):,} trials)")`}
+</PythonCell>
+
+That last block is the practical warning about tails. Estimating a 1-in-10,000 event needs about a
+million trials just to observe it a hundred times — and a hundred observations is a fairly loose
+estimate. Rare-event estimation needs variance-reduction techniques (importance sampling,
+stratification) that plain Monte Carlo does not provide.
+
+<Quiz
+  questions={[
+    {
+      prompt: "You need to halve the standard error of a Monte Carlo estimate. What must you do?",
+      options: [
+        {
+          text: "Quadruple the number of trials — the error falls as 1/√n.",
+          correct: true,
+          explanation:
+            "Right, and it is the fundamental economics of simulation. One extra decimal digit costs 100× the compute, which is why variance-reduction techniques exist.",
+        },
+        {
+          text: "Double the number of trials.",
+          explanation:
+            "Doubling n reduces the standard error by a factor of √2 ≈ 1.41, not 2.",
+        },
+        {
+          text: "Use a better random number generator.",
+          explanation:
+            "Generator quality matters for correctness, but the √n convergence rate is a property of independent sampling itself and is unaffected.",
+        },
+      ],
+    },
+    {
+      prompt: "Which problem is Monte Carlo LEAST suited to as stated?",
+      options: [
+        {
+          text: "Computing the mean of a normal distribution with known parameters.",
+          correct: true,
+          explanation:
+            "Correct — the answer is μ, exactly, with no computation. Simulating it gives a noisy approximation to something you already know precisely.",
+        },
+        {
+          text: "Finding the distribution of a project's completion date across many dependent tasks.",
+          explanation:
+            "An excellent fit: path dependence and dependence between tasks make the analytical treatment intractable. Chapter 13 does exactly this.",
+        },
+        {
+          text: "Estimating the chance a portfolio loses money over a year.",
+          explanation:
+            "Also a good fit — a tail probability over a path-dependent, correlated system, which is precisely what simulation handles well.",
+        },
+      ],
+    },
+    {
+      prompt: "Why are rare-event probabilities hard to estimate by plain simulation?",
+      options: [
+        {
+          text: "You need enormous numbers of trials just to observe the event enough times for a stable estimate.",
+          correct: true,
+          explanation:
+            "Exactly — roughly 100/p trials to see it about a hundred times. A 1-in-10,000 event needs a million trials, and that is still a loose estimate.",
+        },
+        {
+          text: "Random number generators are biased against rare outcomes.",
+          explanation:
+            "A sound generator produces rare outcomes at exactly their correct rate. The difficulty is that their correct rate is very low.",
+        },
+        {
+          text: "Because the law of large numbers does not apply to rare events.",
+          explanation:
+            "It applies perfectly well. It just takes a great many trials to bite when the event almost never happens.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="243-244" />

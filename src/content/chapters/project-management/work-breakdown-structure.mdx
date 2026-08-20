@@ -1,0 +1,244 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Decompose a project into a work breakdown structure.</li>
+    <li>Apply the 100% rule and know when to stop decomposing.</li>
+    <li>Record dependencies in a form the later lessons can compute with.</li>
+  </ul>
+</Callout>
+
+The last two chapters of this course leave statistics proper for **quantitative methods** — the
+techniques that turn structured judgement into decisions. This chapter is about project schedules:
+how long something will take, what determines that, and what it costs to go faster.
+
+None of it works without a decomposition, so that is where we start.
+
+<h2 id="decomposing">Decomposing the work</h2>
+
+A **work breakdown structure** is a hierarchical decomposition of everything a project must
+deliver. Its governing principle is the **100% rule**: the children of any node must together
+account for exactly 100% of that node's scope — no more, no less.
+
+Two failure modes follow directly:
+
+- **Gaps.** Work that nobody owns because it fell between two branches. Integration, data
+  migration and documentation are the classic casualties.
+- **Overlaps.** Two branches that both plausibly include the same task, so it gets estimated twice
+  and delivered zero times.
+
+A WBS decomposes **deliverables**, not activities and not the org chart. "Authentication service"
+is a deliverable; "two weeks of Priya's time" is not. Organising by team is the most common
+mistake, and it guarantees that anything requiring two teams falls into a gap.
+
+<Callout title="The 100% rule cuts both ways">
+  <p>
+    It also forbids adding work that is not in the parent's scope. A WBS that grows sideways as
+    people add things they would like to build is not a decomposition — it is scope creep with a
+    diagram, and the estimate built on it will be wrong from the first day.
+  </p>
+</Callout>
+
+<h2 id="the-hierarchy">The hierarchy</h2>
+
+The scenario for this chapter: replacing an internal reporting platform.
+
+```
+1  Reporting platform replacement
+   1.1  Analysis
+        1.1.1  Requirements gathering
+        1.1.2  Data model design
+        1.1.3  API design
+   1.2  Build
+        1.2.1  Backend services
+        1.2.2  Frontend application
+        1.2.3  Data migration
+   1.3  Integration and quality
+        1.3.1  System integration
+        1.3.2  Testing
+   1.4  Release
+        1.4.1  Documentation
+        1.4.2  Launch
+```
+
+The leaves of that tree are **work packages** — the level at which you estimate, assign and track.
+Everything above them is a summary.
+
+<PythonCell label="The WBS, and the dependencies between work packages">
+{`import pandas as pd
+
+activities = pd.DataFrame([
+    # code, name,                  wbs,     predecessors
+    ("A", "Requirements gathering", "1.1.1", ""),
+    ("B", "Data model design",      "1.1.2", "A"),
+    ("C", "API design",             "1.1.3", "A"),
+    ("D", "Backend services",       "1.2.1", "B,C"),
+    ("E", "Frontend application",   "1.2.2", "C"),
+    ("F", "Data migration",         "1.2.3", "B"),
+    ("G", "System integration",     "1.3.1", "D,E"),
+    ("H", "Testing",                "1.3.2", "F,G"),
+    ("I", "Documentation",          "1.4.1", "E"),
+    ("J", "Launch",                 "1.4.2", "H,I"),
+], columns=["code", "name", "wbs", "predecessors"])
+
+print(activities.to_string(index=False))
+
+print()
+print("Dependency check - every predecessor must be a known activity:")
+known = set(activities["code"])
+problems = 0
+for _, row in activities.iterrows():
+    for predecessor in filter(None, row["predecessors"].split(",")):
+        if predecessor not in known:
+            print(f"  {row['code']} lists unknown predecessor {predecessor}")
+            problems += 1
+print(f"  {problems} problems found")
+
+print()
+starts = activities[activities["predecessors"] == ""]["code"].tolist()
+successors = set()
+for value in activities["predecessors"]:
+    successors.update(filter(None, value.split(",")))
+ends = [code for code in activities["code"] if code not in successors]
+print(f"  starting activities (no predecessors): {starts}")
+print(f"  terminal activities (no successors):   {ends}")`}
+</PythonCell>
+
+<PythonCell label="Checking the network is well formed">
+{`# A schedule network must be a directed acyclic graph. A cycle - even an
+# accidental one - makes the schedule unsolvable rather than merely wrong.
+edges = {}
+for _, row in activities.iterrows():
+    edges[row["code"]] = [p for p in row["predecessors"].split(",") if p]
+
+def topological_order(graph):
+    """Kahn's algorithm; returns None if the graph contains a cycle."""
+    remaining = {node: set(parents) for node, parents in graph.items()}
+    order = []
+    while remaining:
+        ready = [node for node, parents in remaining.items() if not parents]
+        if not ready:
+            return None
+        for node in sorted(ready):
+            order.append(node)
+            del remaining[node]
+        for parents in remaining.values():
+            parents.difference_update(ready)
+    return order
+
+order = topological_order(edges)
+print(f"topological order: {order}")
+print(f"the network is acyclic: {order is not None}")
+
+print()
+# Demonstrate what a cycle looks like.
+broken = dict(edges)
+broken["A"] = ["J"]          # launch must finish before requirements begin
+print("Introducing a cycle (A now depends on J):")
+print(f"  topological sort returns: {topological_order(broken)}")
+print("  -> unsolvable. Real networks acquire cycles surprisingly easily")
+print("     when dependencies are edited by several people.")
+
+print()
+# How much of the network can run in parallel?
+levels = {}
+for code in order:
+    levels[code] = 0 if not edges[code] else 1 + max(levels[p] for p in edges[code])
+print("Dependency depth of each activity:")
+for depth in range(max(levels.values()) + 1):
+    at_depth = [code for code, value in levels.items() if value == depth]
+    print(f"  level {depth}: {', '.join(at_depth)}")
+print()
+print(f"The longest chain is {max(levels.values()) + 1} activities deep. No")
+print("amount of extra staff makes the project shorter than that chain.")`}
+</PythonCell>
+
+<h2 id="when-to-stop">When a task is small enough</h2>
+
+Decomposition stops when a work package is small enough to estimate and track but not so small
+that managing it costs more than doing it. Common heuristics:
+
+- **The 8/80 rule.** Between 8 and 80 hours of effort. Smaller becomes administrative overhead;
+  larger is too coarse to track meaningfully.
+- **One owner.** A single person or team is accountable for it.
+- **A verifiable deliverable.** You can tell without argument whether it is done.
+- **The reporting-period rule.** No longer than one reporting period, so no status update ever has
+  to say "still in progress" twice in a row without explanation.
+
+<Callout title="A WBS is not a schedule" variant="warning">
+  <p>
+    The WBS says <em>what</em> must be built and how the work decomposes. It says nothing about
+    <em>when</em>, or in what order, or how long. Dependencies and durations are separate
+    information, layered on top — which is what the next two lessons add. Conflating the two is why
+    so many project plans are a Gantt chart with no underlying logic.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does the 100% rule require?",
+      options: [
+        {
+          text: "The children of any WBS node account for exactly its scope — no gaps and no overlaps.",
+          correct: true,
+          explanation:
+            "Right, and it cuts both ways: it forbids missing work *and* forbids adding work outside the parent's scope. Integration and migration are the tasks most often lost to gaps.",
+        },
+        {
+          text: "Every team member is allocated 100% to the project.",
+          explanation:
+            "Resource allocation is a separate concern entirely. The 100% rule is about scope decomposition.",
+        },
+        {
+          text: "The project must be 100% defined before work begins.",
+          explanation:
+            "That is a waterfall assumption the rule does not imply. It constrains how a decomposition is structured, not when it is finalised.",
+        },
+      ],
+    },
+    {
+      prompt: "Why must the dependency network be acyclic?",
+      options: [
+        {
+          text: "A cycle means each activity waits on the other, so no valid ordering exists and the schedule is unsolvable.",
+          correct: true,
+          explanation:
+            "Exactly, and it is worth checking in code — networks edited by several people acquire accidental cycles readily, and the failure is not always obvious by eye.",
+        },
+        {
+          text: "Because cycles make the project take longer.",
+          explanation:
+            "It is worse than slow: there is no schedule at all. The forward pass in the next lesson simply cannot run.",
+        },
+        {
+          text: "Because networkx requires a DAG.",
+          explanation:
+            "The requirement is mathematical, not a library limitation. Scheduling algorithms need a topological order, which only exists for acyclic graphs.",
+        },
+      ],
+    },
+    {
+      prompt: "A WBS is organised by team: 'Backend team work', 'Frontend team work'. What is wrong?",
+      options: [
+        {
+          text: "A WBS decomposes deliverables, not the org chart — cross-team work falls into the gaps.",
+          correct: true,
+          explanation:
+            "Correct. Integration is the standard casualty: it belongs to no single team, so under an org-chart decomposition it belongs to nobody and gets estimated by nobody.",
+        },
+        {
+          text: "Nothing — organising by team makes ownership clearest.",
+          explanation:
+            "Ownership is assigned to work packages after decomposition. Using teams as the decomposition axis is what creates the gaps.",
+        },
+        {
+          text: "It violates the 8/80 rule.",
+          explanation:
+            "Package size is a separate matter, and could be fixed by decomposing further. The structural problem is the axis of decomposition itself.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="350-354" />

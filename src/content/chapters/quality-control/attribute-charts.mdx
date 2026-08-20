@@ -1,0 +1,313 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Choose between p, np, c and u charts from the kind of data you have.</li>
+    <li>Build each one and read its limits.</li>
+    <li>Handle varying sample sizes correctly.</li>
+  </ul>
+</Callout>
+
+Attribute data is counted rather than measured: how many units failed, how many defects were
+found. The distinction that decides which chart to use is subtle and worth getting right.
+
+<h2 id="p-charts">p-charts</h2>
+
+A **p-chart** tracks the *proportion* of defective units. Underlying distribution: binomial, from
+chapter&nbsp;3 — a fixed number inspected, each independently pass or fail.
+
+$$
+\bar{p} = \frac{\sum \text{defectives}}{\sum \text{inspected}},
+\qquad
+UCL/LCL = \bar{p} \pm 3\sqrt{\frac{\bar{p}(1 - \bar{p})}{n_i}}
+$$
+
+The subscript on $n_i$ matters: because the sample size appears in the limit, **the limits move**
+when the sample size varies between batches. Wider limits for smaller samples, narrower for
+larger. This is correct behaviour, not a defect, and it is the main practical reason to prefer a
+p-chart over an np-chart.
+
+<PythonCell label="A p-chart with varying sample sizes">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+defects = pd.read_csv("qc-defects.csv")
+print(defects.head(8).to_string(index=False))
+print()
+print(f"{len(defects)} batches, {defects['inspected'].min()}-"
+      f"{defects['inspected'].max()} units inspected per batch")
+
+p_bar = defects["defective"].sum() / defects["inspected"].sum()
+standard_error = np.sqrt(p_bar * (1 - p_bar) / defects["inspected"])
+
+defects["p"] = defects["defective"] / defects["inspected"]
+defects["ucl"] = p_bar + 3 * standard_error
+defects["lcl"] = np.maximum(0, p_bar - 3 * standard_error)
+defects["out"] = (defects["p"] > defects["ucl"]) | (defects["p"] < defects["lcl"])
+
+print()
+print(f"centre line (p-bar): {p_bar:.5f}")
+print(f"control limits vary with sample size:")
+print(f"  smallest sample (n = {defects['inspected'].min()}): "
+      f"UCL {defects.loc[defects['inspected'].idxmin(), 'ucl']:.5f}")
+print(f"  largest  sample (n = {defects['inspected'].max()}): "
+      f"UCL {defects.loc[defects['inspected'].idxmax(), 'ucl']:.5f}")
+
+flagged = defects[defects["out"]]
+print()
+print(f"{len(flagged)} batches out of control: {list(flagged['batch'])}")
+
+fig, ax = plt.subplots(figsize=(9.5, 3.8))
+ax.plot(defects["batch"], defects["p"], marker="o", markersize=3.5, linewidth=1)
+ax.step(defects["batch"], defects["ucl"], where="mid", linewidth=1.2, linestyle="--")
+ax.step(defects["batch"], defects["lcl"], where="mid", linewidth=1.2, linestyle="--")
+ax.axhline(p_bar, linewidth=1.5)
+ax.scatter(flagged["batch"], flagged["p"], s=60, zorder=5, marker="s")
+ax.set_xlabel("batch")
+ax.set_ylabel("proportion defective")
+ax.set_title("p-chart: limits step with the sample size")`}
+</PythonCell>
+
+<h2 id="np-charts">np-charts</h2>
+
+An **np-chart** tracks the *count* of defective units rather than the proportion. It requires a
+**constant** sample size, because otherwise a count of 8 means something different from batch to
+batch.
+
+$$
+\overline{np} = n\bar{p}, \qquad UCL/LCL = n\bar{p} \pm 3\sqrt{n\bar{p}(1 - \bar{p})}
+$$
+
+It contains exactly the same information as a p-chart when $n$ is constant. Its only advantage is
+that operators often find raw counts easier to work with than proportions.
+
+<PythonCell label="np-chart on a constant-sample subset">
+{`# Use only the batches where exactly 200 units were inspected.
+constant = defects[defects["inspected"] == 200].copy()
+
+if len(constant) < 10:
+    # The dataset has varying sizes, so build a comparable constant-n view
+    # by rescaling each batch to a nominal 200 units.
+    constant = defects.copy()
+    constant["defective"] = (constant["p"] * 200).round().astype(int)
+    constant["inspected"] = 200
+    print("(rescaled to a nominal n = 200 for illustration)")
+
+n = 200
+np_bar = n * p_bar
+np_sd = np.sqrt(n * p_bar * (1 - p_bar))
+np_ucl = np_bar + 3 * np_sd
+np_lcl = max(0, np_bar - 3 * np_sd)
+
+print()
+print(f"centre line  {np_bar:>8.3f} defectives per batch of {n}")
+print(f"UCL          {np_ucl:>8.3f}")
+print(f"LCL          {np_lcl:>8.3f}")
+
+out = constant[(constant["defective"] > np_ucl) | (constant["defective"] < np_lcl)]
+print(f"{len(out)} batches out of control: {list(out['batch'])}")
+
+fig, ax = plt.subplots(figsize=(9.5, 3.4))
+ax.plot(constant["batch"], constant["defective"], marker="o", markersize=3.5, linewidth=1)
+ax.axhline(np_bar, linewidth=1.5)
+ax.axhline(np_ucl, linewidth=1.2, linestyle="--")
+ax.axhline(np_lcl, linewidth=1.2, linestyle="--")
+ax.set_xlabel("batch")
+ax.set_ylabel("defective units")
+ax.set_title(f"np-chart, constant n = {n}")
+
+print()
+print("With constant n, p- and np-charts flag exactly the same batches -")
+print("they are the same chart with the y-axis rescaled.")`}
+</PythonCell>
+
+<h2 id="c-and-u">c-charts and u-charts</h2>
+
+The crucial distinction: a **defective** is a unit that fails. A **defect** is a single fault, and
+one unit can have several. A car with three paint blemishes is one defective unit with three
+defects.
+
+Counting defects means the binomial no longer applies — there is no upper bound on how many
+faults a unit can have — so these charts are built on the **Poisson** distribution from
+chapter&nbsp;3, where the variance equals the mean.
+
+- **c-chart** — defect count per inspection unit, with a constant inspection unit.
+
+$$
+\bar{c} = \frac{\sum c_i}{k}, \qquad UCL/LCL = \bar{c} \pm 3\sqrt{\bar{c}}
+$$
+
+- **u-chart** — defects *per unit* when the inspection size varies.
+
+$$
+\bar{u} = \frac{\sum c_i}{\sum n_i}, \qquad UCL/LCL = \bar{u} \pm 3\sqrt{\frac{\bar{u}}{n_i}}
+$$
+
+<PythonCell label="c-chart and u-chart">
+{`c_bar = defects["defects"].mean()
+c_ucl = c_bar + 3 * np.sqrt(c_bar)
+c_lcl = max(0, c_bar - 3 * np.sqrt(c_bar))
+
+print(f"c-chart: c-bar {c_bar:.3f}, UCL {c_ucl:.3f}, LCL {c_lcl:.3f}")
+c_out = defects[(defects["defects"] > c_ucl) | (defects["defects"] < c_lcl)]
+print(f"  {len(c_out)} batches out of control: {list(c_out['batch'])}")
+
+# u-chart: defects per unit inspected.
+u_bar = defects["defects"].sum() / defects["inspected"].sum()
+defects["u"] = defects["defects"] / defects["inspected"]
+defects["u_ucl"] = u_bar + 3 * np.sqrt(u_bar / defects["inspected"])
+defects["u_lcl"] = np.maximum(0, u_bar - 3 * np.sqrt(u_bar / defects["inspected"]))
+
+print()
+print(f"u-chart: u-bar {u_bar:.6f} defects per unit")
+u_out = defects[(defects["u"] > defects["u_ucl"]) | (defects["u"] < defects["u_lcl"])]
+print(f"  {len(u_out)} batches out of control: {list(u_out['batch'])}")
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.6))
+left.plot(defects["batch"], defects["defects"], marker="o", markersize=3, linewidth=1)
+left.axhline(c_bar, linewidth=1.5)
+left.axhline(c_ucl, linewidth=1.2, linestyle="--")
+left.axhline(c_lcl, linewidth=1.2, linestyle="--")
+left.set_title("c-chart: defect count")
+left.set_xlabel("batch")
+
+right.plot(defects["batch"], defects["u"], marker="o", markersize=3, linewidth=1)
+right.axhline(u_bar, linewidth=1.5)
+right.step(defects["batch"], defects["u_ucl"], where="mid", linewidth=1.2, linestyle="--")
+right.step(defects["batch"], defects["u_lcl"], where="mid", linewidth=1.2, linestyle="--")
+right.set_title("u-chart: defects per unit")
+right.set_xlabel("batch")
+plt.tight_layout()
+
+print()
+# Check the Poisson assumption before trusting a c-chart.
+index_of_dispersion = defects["defects"].var(ddof=1) / defects["defects"].mean()
+print(f"index of dispersion for the defect counts: {index_of_dispersion:.3f}")
+print("  (should be near 1 if Poisson; well above 1 means overdispersion,")
+print("   and the c-chart limits would then be too narrow)")`}
+</PythonCell>
+
+<h2 id="choosing">Choosing a chart</h2>
+
+| What you counted | Sample size | Chart | Distribution |
+| --- | --- | --- | --- |
+| Defective **units** | Varies | **p** | Binomial |
+| Defective **units** | Constant | **np** | Binomial |
+| **Defects** | Constant | **c** | Poisson |
+| **Defects** | Varies | **u** | Poisson |
+
+Two decisions: are you counting failed units or individual faults, and is the sample size fixed?
+
+<PythonCell label="Both processes shifted — do the charts agree?">
+{`print("Both the defective rate and the defect rate were designed to shift")
+print("at batch 33. Do the charts detect it?")
+print()
+
+for label, before_slice, after_slice, column in [
+    ("proportion defective", defects[:32], defects[32:], "p"),
+    ("defects per unit",     defects[:32], defects[32:], "u"),
+]:
+    before_value = before_slice[column].mean()
+    after_value = after_slice[column].mean()
+    print(f"{label:<24} before {before_value:.5f}   after {after_value:.5f}   "
+          f"ratio {after_value / before_value:.2f}x")
+
+print()
+print("Batches flagged by each chart:")
+print(f"  p-chart: {list(defects[defects['out']]['batch'])}")
+print(f"  c-chart: {list(c_out['batch'])}")
+print(f"  u-chart: {list(u_out['batch'])}")
+
+print()
+# A run rule catches the sustained shift that single points miss.
+side = np.sign(defects["p"] - p_bar).to_numpy()
+runs = []
+for i in range(len(side) - 7):
+    if abs(side[i:i + 8].sum()) == 8:
+        runs.append(defects["batch"].iloc[i + 7])
+print(f"8-in-a-row rule on the p-chart first fires at batch "
+      f"{runs[0] if runs else 'never'}")
+print()
+print("With only ~200 units per batch, a shift from 3.8% to 5.8% is hard")
+print("to detect from single points - the binomial noise is simply large")
+print("relative to the shift. Run rules, and larger samples, are the answer.")`}
+</PythonCell>
+
+<Callout title="Sample size drives detection power" variant="warning">
+  <p>
+    An attribute chart's ability to spot a shift depends heavily on how many units each batch
+    contains. Detecting a change from 3.8% to 5.8% defective reliably needs samples in the
+    thousands, not the hundreds. If your p-chart never flags anything, the honest first question is
+    whether it <em>could</em>.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "A car has three paint blemishes. For a c-chart, what does that contribute?",
+      options: [
+        {
+          text: "Three defects — c-charts count faults, not failed units.",
+          correct: true,
+          explanation:
+            "Right, and that is exactly the defect/defective distinction. On a p-chart the same car would contribute one defective unit.",
+        },
+        {
+          text: "One defective unit.",
+          explanation:
+            "That is the p-chart or np-chart view. c- and u-charts count individual faults, which is why they use the Poisson rather than the binomial.",
+        },
+        {
+          text: "It depends on whether the blemishes are on the same panel.",
+          explanation:
+            "The counting convention should be defined in advance, but under a straightforward reading three blemishes are three defects.",
+        },
+      ],
+    },
+    {
+      prompt: "Why do a p-chart's control limits move from batch to batch?",
+      options: [
+        {
+          text: "The limits depend on √(p̄(1−p̄)/nᵢ), so they widen for smaller samples and narrow for larger ones.",
+          correct: true,
+          explanation:
+            "Correct, and it is proper behaviour: a smaller sample genuinely carries more sampling variation, so a wider band is required to keep the false-alarm rate constant.",
+        },
+        {
+          text: "Because the process mean is drifting.",
+          explanation:
+            "The centre line is fixed at p̄. It is the *limits* that step, and they do so with sample size, not with the process mean.",
+        },
+        {
+          text: "It is an artefact that should be smoothed away.",
+          explanation:
+            "Smoothing them would give the wrong false-alarm rate for the small batches. The variation is meaningful and should be kept.",
+        },
+      ],
+    },
+    {
+      prompt: "Your defect counts have variance three times their mean. What follows for a c-chart?",
+      options: [
+        {
+          text: "The data is overdispersed, so the Poisson-based limits are too narrow and false alarms will be frequent.",
+          correct: true,
+          explanation:
+            "Exactly — the c-chart's ±3√c̄ assumes variance equals mean. Overdispersion, usually from clustering, needs a negative binomial or a Laney-adjusted chart instead.",
+        },
+        {
+          text: "The chart will miss real shifts.",
+          explanation:
+            "The opposite: limits that are too narrow produce excess false alarms rather than missed signals.",
+        },
+        {
+          text: "You should switch to a p-chart.",
+          explanation:
+            "A p-chart is for defective units, not defect counts, and assumes the binomial. It does not address overdispersion in count data.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="388-398" />

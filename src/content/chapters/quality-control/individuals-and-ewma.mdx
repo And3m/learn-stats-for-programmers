@@ -1,0 +1,307 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Build an I-MR chart when subgrouping is impossible.</li>
+    <li>Build an EWMA chart and choose its smoothing parameter.</li>
+    <li>Explain why EWMA detects small shifts that Shewhart charts miss.</li>
+  </ul>
+</Callout>
+
+The previous lesson's charts need subgroups of several units measured under near-identical
+conditions. Often that is impossible: a batch process produces one measurement per run, a chemical
+assay is destructive and expensive, a daily total is a single number by definition.
+
+This lesson covers what to do with $n = 1$, and then addresses the weakness all Shewhart charts
+share.
+
+<h2 id="i-mr">I-MR charts</h2>
+
+The **individuals and moving range** chart plots every observation, and estimates the spread from
+the differences between *consecutive* observations:
+
+$$
+MR_i = |x_i - x_{i-1}|, \qquad \hat{\sigma} = \frac{\overline{MR}}{d_2} = \frac{\overline{MR}}{1.128}
+$$
+
+using $d_2$ for $n = 2$, since each moving range is the range of a pair.
+
+$$
+\text{I chart:} \quad \bar{x} \pm 3\frac{\overline{MR}}{1.128}
+\qquad
+\text{MR chart:} \quad UCL = 3.267\,\overline{MR},\; LCL = 0
+$$
+
+Using the moving range rather than the overall standard deviation is deliberate: it estimates
+**short-term** variation, so a slow drift inflates the observations without inflating the limits.
+Estimating sigma from the overall standard deviation would let the drift widen its own limits and
+hide itself.
+
+<PythonCell label="An I-MR chart">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+measurements = pd.read_csv("qc-measurements.csv")
+
+# Treat one observation per subgroup as if subgrouping were impossible.
+individuals = measurements[measurements["observation"] == 1].reset_index(drop=True)
+values = individuals["value"].to_numpy()
+print(f"{len(values)} individual measurements, one per period")
+
+moving_range = np.abs(np.diff(values))
+mr_bar = moving_range.mean()
+x_bar = values.mean()
+
+d2 = 1.128
+sigma = mr_bar / d2
+
+i_ucl, i_lcl = x_bar + 3 * sigma, x_bar - 3 * sigma
+mr_ucl, mr_lcl = 3.267 * mr_bar, 0.0
+
+print()
+print(f"mean               {x_bar:.4f}")
+print(f"mean moving range  {mr_bar:.4f}")
+print(f"sigma (MRbar/d2)   {sigma:.4f}")
+print(f"sigma (overall sd) {values.std(ddof=1):.4f}   <- inflated by the drift")
+print()
+print(f"I chart:   CL {x_bar:.4f}   UCL {i_ucl:.4f}   LCL {i_lcl:.4f}")
+print(f"MR chart:  CL {mr_bar:.4f}   UCL {mr_ucl:.4f}   LCL {mr_lcl:.4f}")
+
+i_out = np.where((values > i_ucl) | (values < i_lcl))[0]
+mr_out = np.where(moving_range > mr_ucl)[0]
+print()
+print(f"I chart out of control at periods:  {(i_out + 1).tolist()}")
+print(f"MR chart out of control at periods: {(mr_out + 2).tolist()}")
+
+fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.5, 6), sharex=True)
+periods = np.arange(1, len(values) + 1)
+top.plot(periods, values, marker="o", markersize=3.5, linewidth=1)
+top.axhline(x_bar, linewidth=1.5)
+top.axhline(i_ucl, linewidth=1.2, linestyle="--")
+top.axhline(i_lcl, linewidth=1.2, linestyle="--")
+top.scatter(periods[i_out], values[i_out], s=55, zorder=5, marker="s")
+top.set_ylabel("measurement")
+top.set_title("Individuals chart")
+
+bottom.plot(periods[1:], moving_range, marker="o", markersize=3.5, linewidth=1)
+bottom.axhline(mr_bar, linewidth=1.5)
+bottom.axhline(mr_ucl, linewidth=1.2, linestyle="--")
+bottom.set_xlabel("period")
+bottom.set_ylabel("moving range")
+bottom.set_title("Moving range chart")
+plt.tight_layout()`}
+</PythonCell>
+
+<Callout title="I charts are weak, and it is not their fault" variant="warning">
+  <p>
+    With n = 1 there is no averaging, so the limits are three full process sigmas wide. A shift of
+    one sigma then takes about 44 periods to detect on average. That is not a defect in the method
+    — it is the information content of a single measurement. When you need faster detection from
+    individual readings, the answer is EWMA or CUSUM, not a different Shewhart chart.
+  </p>
+</Callout>
+
+<h2 id="ewma">EWMA charts</h2>
+
+The exponentially weighted moving average chart plots a smoothed statistic instead of the raw
+observation — the same recursion as the exponential smoothing in chapter&nbsp;7:
+
+$$
+z_i = \lambda x_i + (1 - \lambda) z_{i-1}, \qquad z_0 = \bar{x}
+$$
+
+Because $z_i$ pools information across recent observations, its variance is smaller than a single
+reading's, and the control limits are correspondingly tighter:
+
+$$
+z_i \pm 3\sigma\sqrt{\frac{\lambda}{2 - \lambda}\left[1 - (1-\lambda)^{2i}\right]}
+$$
+
+The bracketed term makes the limits widen from a narrow start as the statistic accumulates
+history, approaching an asymptote.
+
+**Choosing $\lambda$**: small values (0.05–0.2) weight history heavily and detect small sustained
+shifts best; large values approach a plain individuals chart. $\lambda = 0.2$ with three-sigma
+limits is the common default.
+
+<PythonCell label="An EWMA chart">
+{`def ewma_chart(values, lam=0.2, sigma=None, L=3.0):
+    values = np.asarray(values, dtype=float)
+    centre = values.mean()
+    if sigma is None:
+        sigma = np.abs(np.diff(values)).mean() / 1.128
+
+    z = np.empty(len(values))
+    previous = centre
+    for i, value in enumerate(values):
+        previous = lam * value + (1 - lam) * previous
+        z[i] = previous
+
+    steps = np.arange(1, len(values) + 1)
+    spread = sigma * np.sqrt((lam / (2 - lam)) * (1 - (1 - lam) ** (2 * steps)))
+    return z, centre + L * spread, centre - L * spread, centre
+
+z, ucl, lcl, centre = ewma_chart(values, lam=0.2, sigma=sigma)
+signals = np.where((z > ucl) | (z < lcl))[0]
+
+print(f"EWMA with lambda = 0.2")
+print(f"  centre line {centre:.4f}")
+print(f"  limits widen from +/-{ucl[0] - centre:.4f} to "
+      f"+/-{ucl[-1] - centre:.4f} as history accumulates")
+print(f"  first signal at period {signals[0] + 1 if len(signals) else 'none'}")
+print(f"  compared with the I chart's first signal at period "
+      f"{(i_out[0] + 1) if len(i_out) else 'none'}")
+
+fig, ax = plt.subplots(figsize=(9.5, 4))
+ax.plot(periods, values, linewidth=0.7, alpha=0.45, label="individual readings")
+ax.plot(periods, z, marker="o", markersize=3, linewidth=1.6, label="EWMA")
+ax.plot(periods, ucl, linewidth=1.2, linestyle="--")
+ax.plot(periods, lcl, linewidth=1.2, linestyle="--")
+ax.axhline(centre, linewidth=1.5)
+if len(signals):
+    ax.scatter(periods[signals], z[signals], s=55, zorder=5, marker="s")
+ax.set_xlabel("period")
+ax.set_ylabel("measurement")
+ax.set_title("EWMA detects the sustained shift the I chart nearly misses")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+<h2 id="small-shifts">Detecting small shifts</h2>
+
+Shewhart charts — x-bar, I, p, c — look at **one point at a time**. A point either crosses a limit
+or it does not, and no memory of previous points enters the decision. That makes them excellent at
+catching large sudden shifts and poor at catching small sustained ones.
+
+EWMA and CUSUM accumulate evidence across observations, which is exactly what a small persistent
+shift provides. The trade is symmetric: they are slower to react to a large sudden jump, because
+the smoothing damps it.
+
+<PythonCell label="Comparing detection speed">
+{`rng = np.random.default_rng(41)
+
+def first_signal_i_chart(series, centre, sigma):
+    beyond = np.where(np.abs(series - centre) > 3 * sigma)[0]
+    return beyond[0] if len(beyond) else None
+
+def first_signal_ewma(series, centre, sigma, lam=0.2, L=3.0):
+    z, previous = np.empty(len(series)), centre
+    for i, value in enumerate(series):
+        previous = lam * value + (1 - lam) * previous
+        z[i] = previous
+    steps = np.arange(1, len(series) + 1)
+    spread = sigma * np.sqrt((lam / (2 - lam)) * (1 - (1 - lam) ** (2 * steps)))
+    beyond = np.where(np.abs(z - centre) > L * spread)[0]
+    return beyond[0] if len(beyond) else None
+
+base_sigma = 1.0
+trials = 3000
+horizon = 200
+
+print(f"{'shift':>9}{'I chart ARL':>14}{'EWMA ARL':>12}{'ratio':>9}")
+for shift in [0.5, 0.75, 1.0, 1.5, 2.0, 3.0]:
+    i_runs, ewma_runs = [], []
+    for _ in range(trials):
+        series = rng.normal(shift * base_sigma, base_sigma, horizon)
+        i_signal = first_signal_i_chart(series, 0.0, base_sigma)
+        e_signal = first_signal_ewma(series, 0.0, base_sigma)
+        i_runs.append(i_signal if i_signal is not None else horizon)
+        ewma_runs.append(e_signal if e_signal is not None else horizon)
+    i_arl, e_arl = np.mean(i_runs) + 1, np.mean(ewma_runs) + 1
+    print(f"{shift:>8.2f}s{i_arl:>14.1f}{e_arl:>12.1f}{i_arl / e_arl:>9.2f}x")
+
+print()
+print("EWMA is several times faster for shifts under 1.5 sigma, and the")
+print("advantage disappears for large jumps - which is exactly the trade.")
+
+print()
+print("Effect of lambda on a 1-sigma shift:")
+for lam in [0.05, 0.1, 0.2, 0.4, 0.8]:
+    runs = []
+    for _ in range(1500):
+        series = rng.normal(1.0, 1.0, horizon)
+        signal = first_signal_ewma(series, 0.0, 1.0, lam=lam)
+        runs.append(signal if signal is not None else horizon)
+    print(f"  lambda {lam:.2f}  ARL {np.mean(runs) + 1:>7.1f}")
+print()
+print("Smaller lambda means more memory and faster detection of small")
+print("sustained shifts - at the cost of sluggishness against large jumps.")`}
+</PythonCell>
+
+<Callout title="Use them together">
+  <p>
+    The standard recommendation is to run a Shewhart chart <em>and</em> an EWMA or CUSUM on the
+    same process. The Shewhart chart catches large sudden changes immediately; the EWMA catches the
+    slow drift that would otherwise take fifty periods to notice. They fail in opposite directions,
+    which is precisely why the pair works.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why is sigma estimated from the moving range rather than the overall standard deviation?",
+      options: [
+        {
+          text: "The moving range captures short-term variation, so a slow drift does not inflate the limits and hide itself.",
+          correct: true,
+          explanation:
+            "Exactly. Using the overall standard deviation would let a drift widen its own control limits, which is precisely the failure the chart exists to prevent.",
+        },
+        {
+          text: "Because the overall standard deviation is harder to compute.",
+          explanation:
+            "It is trivially computable. The choice is about which source of variation you want the limits to reflect.",
+        },
+        {
+          text: "Because the moving range is always smaller.",
+          explanation:
+            "It is smaller *when a drift is present* — which is the point — but for a stable process the two estimates agree closely.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does EWMA detect small sustained shifts faster than an individuals chart?",
+      options: [
+        {
+          text: "It accumulates evidence across observations, while a Shewhart chart judges each point alone.",
+          correct: true,
+          explanation:
+            "Right. Pooling reduces the variance of the plotted statistic, so the limits are tighter and a persistent small shift pushes the smoothed value out much sooner.",
+        },
+        {
+          text: "Because it uses tighter control limits set at two sigma.",
+          explanation:
+            "The multiplier is still typically 3. The limits are tighter in absolute terms because the *statistic's* variance is smaller, not because L was reduced.",
+        },
+        {
+          text: "Because it removes outliers before plotting.",
+          explanation:
+            "It removes nothing. Smoothing damps individual readings, which is why EWMA is actually slower than a Shewhart chart against a large sudden jump.",
+        },
+      ],
+    },
+    {
+      prompt: "You reduce EWMA's λ from 0.4 to 0.05. What is the effect?",
+      options: [
+        {
+          text: "More memory: better at small sustained shifts, slower against large sudden jumps.",
+          correct: true,
+          explanation:
+            "Correct — λ is exactly the responsiveness dial from chapter 7's exponential smoothing. It is why running a Shewhart chart alongside is standard practice.",
+        },
+        {
+          text: "Faster detection of every kind of shift.",
+          explanation:
+            "There is no free lunch: heavier smoothing damps large jumps, so detection of those gets slower.",
+        },
+        {
+          text: "The chart becomes equivalent to an individuals chart.",
+          explanation:
+            "That is what λ → 1 does. λ = 0.05 moves in the opposite direction, toward maximum memory.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="405-410" />

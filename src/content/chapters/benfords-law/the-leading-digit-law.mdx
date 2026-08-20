@@ -1,0 +1,254 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>State Benford's law and the frequencies it predicts.</li>
+    <li>Explain the scale-invariance argument for why it holds.</li>
+    <li>Generate data that conforms to it, and data that does not.</li>
+  </ul>
+</Callout>
+
+<h2 id="the-surprise">The surprise</h2>
+
+Take a large collection of naturally occurring numbers — river lengths, town populations, invoice
+amounts, physical constants — and look at the **first digit** of each.
+
+Intuition says the nine possible leading digits should appear about 11% of the time each. They do
+not. The digit 1 leads about **30%** of the time, and 9 only about **4.6%**.
+
+This is Benford's law, first noticed by the astronomer Simon Newcomb in 1881 — he observed that the
+early pages of logarithm tables were more worn than the later ones — and rediscovered and
+popularised by Frank Benford in 1938.
+
+<h2 id="the-formula">The formula</h2>
+
+The probability that the leading digit is $d$ is
+
+$$
+P(D_1 = d) = \log_{10}\!\left(1 + \frac{1}{d}\right), \qquad d \in \{1, 2, \ldots, 9\}
+$$
+
+Working through the values:
+
+| Digit | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Frequency | 30.1% | 17.6% | 12.5% | 9.7% | 7.9% | 6.7% | 5.8% | 5.1% | 4.6% |
+
+The first three digits account for 60% of all observations. The law extends to later digits too,
+though the effect fades quickly — by the third digit the distribution is nearly uniform.
+
+<PythonCell label="The law, and a first look at real-ish data">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+digits = np.arange(1, 10)
+benford = np.log10(1 + 1 / digits)
+
+print(f"{'digit':>6}{'Benford':>10}{'uniform':>10}{'ratio':>8}")
+for digit, probability in zip(digits, benford):
+    print(f"{digit:>6}{probability:>10.4f}{1/9:>10.4f}{probability / (1/9):>8.2f}")
+
+print()
+print(f"sum of probabilities: {benford.sum():.10f}")
+print(f"digits 1-3 account for {benford[:3].sum():.1%} of all leading digits")
+
+# Second-digit law, for comparison.
+second = np.array([
+    sum(np.log10(1 + 1 / (10 * first + d)) for first in range(1, 10))
+    for d in range(10)
+])
+print()
+print("The second digit is much closer to uniform:")
+print("  " + "  ".join(f"{d}:{p:.3f}" for d, p in enumerate(second)))
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.4))
+left.bar(digits - 0.2, benford, width=0.4, label="Benford")
+left.bar(digits + 0.2, np.full(9, 1 / 9), width=0.4, label="uniform")
+left.set_xticks(digits)
+left.set_xlabel("leading digit")
+left.set_ylabel("frequency")
+left.set_title("First digit")
+left.legend(fontsize=8)
+
+right.bar(np.arange(10), second)
+right.axhline(0.1, linewidth=1.5)
+right.set_xticks(np.arange(10))
+right.set_xlabel("second digit")
+right.set_title("Second digit - nearly uniform")
+plt.tight_layout()`}
+</PythonCell>
+
+<h2 id="why-it-happens">Why it happens</h2>
+
+The cleanest argument is **scale invariance**.
+
+Suppose there is a universal law governing leading digits of naturally occurring quantities. It
+cannot depend on the units, because units are an arbitrary human choice — a distribution of river
+lengths must obey the same law whether measured in kilometres or miles. Converting units
+multiplies every value by a constant, which is a shift along the logarithmic axis.
+
+The only distribution of leading digits invariant under such a shift is Benford's.
+
+The mechanism becomes concrete if you think about **the mantissa** — the fractional part of
+$\log_{10}$ of a value. Benford's law is exactly the statement that the mantissa is uniformly
+distributed on $[0,1)$. Because a logarithmic scale devotes more width to the span from 1 to 2
+than from 9 to 10, a uniformly distributed mantissa spends more time with a leading 1.
+
+$$
+\log_{10} 2 - \log_{10} 1 = 0.301
+\qquad\text{versus}\qquad
+\log_{10} 10 - \log_{10} 9 = 0.046
+$$
+
+Those are exactly the predicted frequencies.
+
+<PythonCell label="Uniform on the log scale means Benford on the digits">
+{`rng = np.random.default_rng(97)
+
+def leading_digit(values):
+    values = np.abs(np.asarray(values, dtype=float))
+    values = values[values > 0]
+    return (values / 10 ** np.floor(np.log10(values))).astype(int)
+
+# Draw the mantissa uniformly - the definition of Benford conformity.
+mantissa = rng.random(200_000)
+log_uniform = 10 ** (mantissa + rng.integers(1, 6, 200_000))
+
+observed = np.array([(leading_digit(log_uniform) == d).mean() for d in digits])
+
+print(f"{'digit':>6}{'observed':>11}{'Benford':>11}{'difference':>12}")
+for digit, seen, expected in zip(digits, observed, benford):
+    print(f"{digit:>6}{seen:>11.4f}{expected:>11.4f}{seen - expected:>+12.5f}")
+
+print()
+print("Now the other direction: check that real logarithms are uniform.")
+values = 10 ** (rng.random(200_000) * 5 + 1)
+mantissas = np.log10(values) % 1
+print(f"  mean of the mantissa      {mantissas.mean():.4f}   (0.5 if uniform)")
+print(f"  standard deviation        {mantissas.std():.4f}   (0.2887 if uniform)")
+
+fig, ax = plt.subplots()
+ax.hist(mantissas, bins=50)
+ax.axhline(len(mantissas) / 50, linewidth=2)
+ax.set_xlabel("fractional part of log10(value)")
+ax.set_ylabel("count")
+ax.set_title("A uniform mantissa is exactly what Benford conformity means")`}
+</PythonCell>
+
+<PythonCell label="Scale invariance, demonstrated">
+{`# Convert the same values into different units and re-check the digits.
+base = 10 ** (rng.random(100_000) * 4 + 1)
+
+conversions = {
+    "original":            1.0,
+    "x 2.54 (in -> cm)":   2.54,
+    "x 1.609 (mi -> km)":  1.609,
+    "x 0.0254":            0.0254,
+    "x 1000":              1000.0,
+    "x 7.3 (arbitrary)":   7.3,
+}
+
+print(f"{'units':<22}" + "".join(f"{d:>7}" for d in digits))
+print(f"{'Benford predicts':<22}" + "".join(f"{p:>7.3f}" for p in benford))
+print("-" * (22 + 7 * 9))
+for label, factor in conversions.items():
+    frequencies = [(leading_digit(base * factor) == d).mean() for d in digits]
+    print(f"{label:<22}" + "".join(f"{f:>7.3f}" for f in frequencies))
+
+print()
+print("The distribution barely moves. That invariance under rescaling is the")
+print("strongest argument that Benford is the only law it could have been.")
+
+print()
+# Multiplying many random factors also produces Benford behaviour, by the
+# central limit theorem acting on the logarithms.
+products = np.prod(rng.uniform(0.5, 5.0, size=(80_000, 12)), axis=1)
+frequencies = [(leading_digit(products) == d).mean() for d in digits]
+print("Products of many random factors converge to Benford too:")
+print(f"  {'observed':<10}" + "".join(f"{f:>7.3f}" for f in frequencies))
+print(f"  {'Benford':<10}" + "".join(f"{p:>7.3f}" for p in benford))`}
+</PythonCell>
+
+That last result is the practical engine behind the law. Quantities that arise from **multiplying**
+many independent factors — compound growth, prices built from margins on costs, populations
+growing at varying rates — have log values that are sums of many independent terms. The central
+limit theorem spreads those sums out, and a spread-out distribution of logarithms produces a nearly
+uniform mantissa, which is Benford.
+
+<Callout title="Benford's law is a property of the generating process" variant="warning">
+  <p>
+    It is not a law of nature that all numbers obey. It follows from a specific kind of
+    process — multiplicative, spanning several orders of magnitude, unconstrained. Data generated
+    differently will not conform, and no amount of being "natural" changes that. The next lesson is
+    about telling the two cases apart <em>before</em> drawing conclusions from a test.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What fraction of naturally occurring values have a leading digit of 1?",
+      options: [
+        {
+          text: "About 30%.",
+          correct: true,
+          explanation:
+            "log₁₀(2) ≈ 0.301. On a logarithmic scale the span from 1 to 2 is much wider than from 9 to 10, and a uniform mantissa therefore lands on a leading 1 far more often.",
+        },
+        {
+          text: "About 11%, since there are nine possible digits.",
+          explanation:
+            "That is the uniform assumption, and it is exactly what makes the law surprising. Leading digits of multiplicative processes are strongly non-uniform.",
+        },
+        {
+          text: "It depends entirely on the units of measurement.",
+          explanation:
+            "The opposite — scale invariance means the distribution barely changes under unit conversion, and that invariance is the main argument for the law.",
+        },
+      ],
+    },
+    {
+      prompt: "What does Benford conformity mean in terms of the mantissa?",
+      options: [
+        {
+          text: "The fractional part of log₁₀(value) is uniformly distributed on [0, 1).",
+          correct: true,
+          explanation:
+            "Exactly, and it is the most useful restatement of the law — it turns a claim about digits into a claim about a uniform distribution, which is far easier to test.",
+        },
+        {
+          text: "The values themselves are uniformly distributed.",
+          explanation:
+            "Uniformly distributed values give roughly uniform leading digits, which is the opposite of Benford behaviour.",
+        },
+        {
+          text: "The logarithms are normally distributed.",
+          explanation:
+            "A sufficiently wide lognormal does conform approximately, because a spread-out log distribution produces a near-uniform mantissa. But uniformity of the mantissa is the exact condition.",
+        },
+      ],
+    },
+    {
+      prompt: "Why do products of many random factors tend toward Benford?",
+      options: [
+        {
+          text: "Their logarithms are sums of many independent terms, which spread out and make the mantissa nearly uniform.",
+          correct: true,
+          explanation:
+            "Right — the central limit theorem applied to the logarithms. It is why multiplicative processes like compound growth and prices built from stacked margins conform so reliably.",
+        },
+        {
+          text: "Because multiplication always produces large numbers.",
+          explanation:
+            "Magnitude alone is irrelevant; what matters is spanning several orders of magnitude, which is a statement about spread rather than size.",
+        },
+        {
+          text: "Because random factors are themselves Benford-distributed.",
+          explanation:
+            "The factors here were drawn uniformly from 0.5 to 5, which is not Benford. Conformity emerges from the multiplication, not from the inputs.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="320-324" />

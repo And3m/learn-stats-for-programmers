@@ -3,6 +3,13 @@
 
 import type { ComponentType } from "react";
 
+import BenfordsLawStrongerDiagnostics from "@/content/chapters/benfords-law/stronger-diagnostics.mdx";
+import BenfordsLawTestingConformity from "@/content/chapters/benfords-law/testing-conformity.mdx";
+import BenfordsLawTheLeadingDigitLaw from "@/content/chapters/benfords-law/the-leading-digit-law.mdx";
+import BenfordsLawWhenItApplies from "@/content/chapters/benfords-law/when-it-applies.mdx";
+import DecisionAnalysisDecidingWithoutProbabilities from "@/content/chapters/decision-analysis/deciding-without-probabilities.mdx";
+import DecisionAnalysisDecisionTrees from "@/content/chapters/decision-analysis/decision-trees.mdx";
+import DecisionAnalysisExpectedValue from "@/content/chapters/decision-analysis/expected-value.mdx";
 import DistributionsBinomialDistribution from "@/content/chapters/distributions/binomial-distribution.mdx";
 import DistributionsConditionalProbability from "@/content/chapters/distributions/conditional-probability.mdx";
 import DistributionsNormalDistribution from "@/content/chapters/distributions/normal-distribution.mdx";
@@ -11,6 +18,9 @@ import DistributionsUniformAndPoisson from "@/content/chapters/distributions/uni
 import GroundworkHowThisCourseWorks from "@/content/chapters/groundwork/how-this-course-works.mdx";
 import GroundworkThePythonToolkit from "@/content/chapters/groundwork/the-python-toolkit.mdx";
 import GroundworkWhyQuantitativeThinking from "@/content/chapters/groundwork/why-quantitative-thinking.mdx";
+import LinearProgrammingFormulatingTheProblem from "@/content/chapters/linear-programming/formulating-the-problem.mdx";
+import LinearProgrammingInterpretingAndStressTesting from "@/content/chapters/linear-programming/interpreting-and-stress-testing.mdx";
+import LinearProgrammingSolvingWithScipy from "@/content/chapters/linear-programming/solving-with-scipy.mdx";
 import LinearRegressionCheckingAssumptions from "@/content/chapters/linear-regression/checking-assumptions.mdx";
 import LinearRegressionFittingAModel from "@/content/chapters/linear-regression/fitting-a-model.mdx";
 import LinearRegressionInterpretingResults from "@/content/chapters/linear-regression/interpreting-results.mdx";
@@ -19,10 +29,26 @@ import LogisticRegressionClassificationMetrics from "@/content/chapters/logistic
 import LogisticRegressionFittingAndInterpreting from "@/content/chapters/logistic-regression/fitting-and-interpreting.mdx";
 import LogisticRegressionThresholdsAndRoc from "@/content/chapters/logistic-regression/thresholds-and-roc.mdx";
 import LogisticRegressionWhyNotLinear from "@/content/chapters/logistic-regression/why-not-linear.mdx";
+import MarkovAbsorbingStates from "@/content/chapters/markov/absorbing-states.mdx";
+import MarkovEquilibrium from "@/content/chapters/markov/equilibrium.mdx";
+import MarkovMultiStepPrediction from "@/content/chapters/markov/multi-step-prediction.mdx";
+import MarkovStatesAndTransitions from "@/content/chapters/markov/states-and-transitions.mdx";
+import MonteCarloSimulatingContinuousOutcomes from "@/content/chapters/monte-carlo/simulating-continuous-outcomes.mdx";
+import MonteCarloSimulatingDiscreteOutcomes from "@/content/chapters/monte-carlo/simulating-discrete-outcomes.mdx";
+import MonteCarloTheSixStepProcess from "@/content/chapters/monte-carlo/the-six-step-process.mdx";
+import MonteCarloWhySimulate from "@/content/chapters/monte-carlo/why-simulate.mdx";
 import ProbabilityBasicProbability from "@/content/chapters/probability/basic-probability.mdx";
 import ProbabilityCountingRules from "@/content/chapters/probability/counting-rules.mdx";
 import ProbabilityPermutationsAndCombinations from "@/content/chapters/probability/permutations-and-combinations.mdx";
 import ProbabilityRandomVariables from "@/content/chapters/probability/random-variables.mdx";
+import ProjectManagementCriticalPath from "@/content/chapters/project-management/critical-path.mdx";
+import ProjectManagementPertEstimates from "@/content/chapters/project-management/pert-estimates.mdx";
+import ProjectManagementRiskAndCrashing from "@/content/chapters/project-management/risk-and-crashing.mdx";
+import ProjectManagementWorkBreakdownStructure from "@/content/chapters/project-management/work-breakdown-structure.mdx";
+import QualityControlAttributeCharts from "@/content/chapters/quality-control/attribute-charts.mdx";
+import QualityControlControlChartFundamentals from "@/content/chapters/quality-control/control-chart-fundamentals.mdx";
+import QualityControlIndividualsAndEwma from "@/content/chapters/quality-control/individuals-and-ewma.mdx";
+import QualityControlVariableCharts from "@/content/chapters/quality-control/variable-charts.mdx";
 import TimeSeriesAcfAndPacf from "@/content/chapters/time-series/acf-and-pacf.mdx";
 import TimeSeriesArima from "@/content/chapters/time-series/arima.mdx";
 import TimeSeriesExponentialSmoothing from "@/content/chapters/time-series/exponential-smoothing.mdx";
@@ -34,6 +60,13 @@ import TreesAndForestsOverfittingAndPruning from "@/content/chapters/trees-and-f
 import TreesAndForestsRandomForests from "@/content/chapters/trees-and-forests/random-forests.mdx";
 
 export const lessonComponents: Record<string, ComponentType> = {
+  "benfords-law/stronger-diagnostics": BenfordsLawStrongerDiagnostics,
+  "benfords-law/testing-conformity": BenfordsLawTestingConformity,
+  "benfords-law/the-leading-digit-law": BenfordsLawTheLeadingDigitLaw,
+  "benfords-law/when-it-applies": BenfordsLawWhenItApplies,
+  "decision-analysis/deciding-without-probabilities": DecisionAnalysisDecidingWithoutProbabilities,
+  "decision-analysis/decision-trees": DecisionAnalysisDecisionTrees,
+  "decision-analysis/expected-value": DecisionAnalysisExpectedValue,
   "distributions/binomial-distribution": DistributionsBinomialDistribution,
   "distributions/conditional-probability": DistributionsConditionalProbability,
   "distributions/normal-distribution": DistributionsNormalDistribution,
@@ -42,6 +75,9 @@ export const lessonComponents: Record<string, ComponentType> = {
   "groundwork/how-this-course-works": GroundworkHowThisCourseWorks,
   "groundwork/the-python-toolkit": GroundworkThePythonToolkit,
   "groundwork/why-quantitative-thinking": GroundworkWhyQuantitativeThinking,
+  "linear-programming/formulating-the-problem": LinearProgrammingFormulatingTheProblem,
+  "linear-programming/interpreting-and-stress-testing": LinearProgrammingInterpretingAndStressTesting,
+  "linear-programming/solving-with-scipy": LinearProgrammingSolvingWithScipy,
   "linear-regression/checking-assumptions": LinearRegressionCheckingAssumptions,
   "linear-regression/fitting-a-model": LinearRegressionFittingAModel,
   "linear-regression/interpreting-results": LinearRegressionInterpretingResults,
@@ -50,10 +86,26 @@ export const lessonComponents: Record<string, ComponentType> = {
   "logistic-regression/fitting-and-interpreting": LogisticRegressionFittingAndInterpreting,
   "logistic-regression/thresholds-and-roc": LogisticRegressionThresholdsAndRoc,
   "logistic-regression/why-not-linear": LogisticRegressionWhyNotLinear,
+  "markov/absorbing-states": MarkovAbsorbingStates,
+  "markov/equilibrium": MarkovEquilibrium,
+  "markov/multi-step-prediction": MarkovMultiStepPrediction,
+  "markov/states-and-transitions": MarkovStatesAndTransitions,
+  "monte-carlo/simulating-continuous-outcomes": MonteCarloSimulatingContinuousOutcomes,
+  "monte-carlo/simulating-discrete-outcomes": MonteCarloSimulatingDiscreteOutcomes,
+  "monte-carlo/the-six-step-process": MonteCarloTheSixStepProcess,
+  "monte-carlo/why-simulate": MonteCarloWhySimulate,
   "probability/basic-probability": ProbabilityBasicProbability,
   "probability/counting-rules": ProbabilityCountingRules,
   "probability/permutations-and-combinations": ProbabilityPermutationsAndCombinations,
   "probability/random-variables": ProbabilityRandomVariables,
+  "project-management/critical-path": ProjectManagementCriticalPath,
+  "project-management/pert-estimates": ProjectManagementPertEstimates,
+  "project-management/risk-and-crashing": ProjectManagementRiskAndCrashing,
+  "project-management/work-breakdown-structure": ProjectManagementWorkBreakdownStructure,
+  "quality-control/attribute-charts": QualityControlAttributeCharts,
+  "quality-control/control-chart-fundamentals": QualityControlControlChartFundamentals,
+  "quality-control/individuals-and-ewma": QualityControlIndividualsAndEwma,
+  "quality-control/variable-charts": QualityControlVariableCharts,
   "time-series/acf-and-pacf": TimeSeriesAcfAndPacf,
   "time-series/arima": TimeSeriesArima,
   "time-series/exponential-smoothing": TimeSeriesExponentialSmoothing,

@@ -1,0 +1,250 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Elicit three-point estimates and combine them into an expected duration.</li>
+    <li>Compute activity variance and explain why it matters more than the mean.</li>
+    <li>Recognise the assumptions the PERT formula quietly makes.</li>
+  </ul>
+</Callout>
+
+<h2 id="three-point">Three-point estimates</h2>
+
+Asking "how long will this take?" gets you a single number that is usually optimistic, because
+people estimate the path where nothing goes wrong. PERT asks for three instead:
+
+- $a$ — **optimistic**: everything goes right. Roughly a 1-in-100 best case.
+- $m$ — **most likely**: the modal outcome, what usually happens.
+- $b$ — **pessimistic**: things go badly, though short of catastrophe. Roughly a 1-in-100 worst
+  case.
+
+Three questions produce a much better estimate than one, for a reason that has little to do with
+mathematics: asking for a pessimistic case gives people **permission to think about what could go
+wrong**, which a single-point question implicitly discourages.
+
+<h2 id="expected-time">Expected time</h2>
+
+The three estimates are combined as a weighted average:
+
+$$
+t_e = \frac{a + 4m + b}{6}
+$$
+
+The most likely value carries four-sixths of the weight and the extremes one-sixth each. This is
+the mean of a beta distribution under particular shape assumptions — and note that $t_e$ is
+generally **not** equal to $m$. When the pessimistic case is further from the mode than the
+optimistic one, which is nearly always true for software work, the expected time exceeds the most
+likely time.
+
+That gap is the whole point. It is the arithmetic of the observation that projects overrun more
+often than they underrun.
+
+<h2 id="variance">Variance, and why it matters</h2>
+
+$$
+\sigma^2 = \left(\frac{b - a}{6}\right)^2
+$$
+
+The reasoning: for a roughly normal quantity almost all the mass lies within three standard
+deviations of the mean, so the full range $b - a$ spans about six of them.
+
+Variance is what makes PERT more than a smarter average. Two activities with the same expected
+duration can carry very different risk, and only the variance distinguishes them — which is what
+lesson&nbsp;13.4 needs to attach a probability to a delivery date.
+
+<PythonCell label="Three-point estimates for the reporting platform">
+{`import numpy as np
+import pandas as pd
+
+estimates = pd.DataFrame([
+    # code, name,                   a,   m,   b     (working days)
+    ("A", "Requirements gathering",  4,   6,  10),
+    ("B", "Data model design",       3,   5,   9),
+    ("C", "API design",              2,   4,   8),
+    ("D", "Backend services",        8,  12,  22),
+    ("E", "Frontend application",    6,  10,  16),
+    ("F", "Data migration",          5,   8,  15),
+    ("G", "System integration",      3,   5,  11),
+    ("H", "Testing",                 4,   7,  13),
+    ("I", "Documentation",           2,   3,   6),
+    ("J", "Launch",                  1,   2,   5),
+], columns=["code", "name", "a", "m", "b"])
+
+estimates["te"] = (estimates["a"] + 4 * estimates["m"] + estimates["b"]) / 6
+estimates["variance"] = ((estimates["b"] - estimates["a"]) / 6) ** 2
+estimates["sd"] = np.sqrt(estimates["variance"])
+estimates["te - m"] = estimates["te"] - estimates["m"]
+
+print(estimates.round(3).to_string(index=False))
+
+print()
+print(f"Every expected time exceeds its most likely value: "
+      f"{bool((estimates['te - m'] > 0).all())}")
+print(f"Total slippage from that effect alone: "
+      f"{estimates['te - m'].sum():.2f} days across {len(estimates)} activities")
+
+print()
+print("Ranked by uncertainty rather than by duration:")
+by_risk = estimates.sort_values("sd", ascending=False)
+for _, row in by_risk.head(5).iterrows():
+    print(f"  {row['code']}  {row['name']:<24} te {row['te']:>5.2f}  sd {row['sd']:>5.2f}"
+          f"   range {row['a']:.0f}-{row['b']:.0f}")
+
+print()
+print("Backend services and data migration carry the most risk. They are")
+print("where estimation effort and contingency planning should go, and that")
+print("ranking is not the same as ranking by expected duration.")`}
+</PythonCell>
+
+<PythonCell label="What the beta distribution behind PERT looks like">
+{`import matplotlib.pyplot as plt
+from scipy import stats
+
+def pert_beta(a, m, b, lam=4.0):
+    """The beta distribution PERT implicitly assumes."""
+    if b == a:
+        return None
+    mean = (a + lam * m + b) / (lam + 2)
+    alpha = ((mean - a) * (2 * m - a - b)) / ((m - mean) * (b - a)) if m != mean else 3.0
+    beta = alpha * (b - mean) / (mean - a)
+    return stats.beta(alpha, beta, loc=a, scale=b - a)
+
+fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+for ax, code in zip(axes, ["D", "E", "J"]):
+    row = estimates[estimates["code"] == code].iloc[0]
+    distribution = pert_beta(row["a"], row["m"], row["b"])
+    x = np.linspace(row["a"], row["b"], 300)
+    ax.plot(x, distribution.pdf(x), linewidth=2)
+    ax.axvline(row["m"], linewidth=1.2, linestyle="--")
+    ax.axvline(row["te"], linewidth=1.2)
+    ax.set_title(f"{code}: {row['name']}", fontsize=8)
+    ax.set_xlabel("days")
+axes[0].set_ylabel("density")
+plt.tight_layout()
+
+print("Solid line = expected time, dashed = most likely.")
+print("The distribution is right-skewed: things can go much more wrong")
+print("than they can go right, which is why te sits above m.")
+
+print()
+print("Sanity-checking the formula against the fitted distributions:")
+print(f"{'code':>5}{'te formula':>12}{'beta mean':>12}{'sd formula':>12}{'beta sd':>10}")
+for _, row in estimates.iterrows():
+    distribution = pert_beta(row["a"], row["m"], row["b"])
+    print(f"{row['code']:>5}{row['te']:>12.3f}{distribution.mean():>12.3f}"
+          f"{row['sd']:>12.3f}{distribution.std():>10.3f}")
+
+print()
+print("The means agree exactly, by construction. The standard deviations")
+print("do not: (b-a)/6 is an approximation, and it generally understates")
+print("the true spread. That matters in lesson 13.4.")`}
+</PythonCell>
+
+<Callout title="What PERT quietly assumes" variant="warning">
+  <p>
+    Three things, all debatable. That the range spans six standard deviations — for a genuinely
+    skewed distribution it does not, and (b−a)/6 understates the spread. That the mode gets exactly
+    four-sixths of the weight — a convention, not a derivation. And most importantly that your
+    three estimates are honest: PERT cannot fix an optimistic <em>b</em>, and the pessimistic
+    estimate is the one people most reliably under-state.
+  </p>
+</Callout>
+
+<PythonCell label="How sensitive is the answer to the pessimistic estimate?">
+{`row = estimates[estimates["code"] == "D"].iloc[0]
+a, m = row["a"], row["m"]
+
+print(f"Activity D: optimistic {a:.0f}, most likely {m:.0f}")
+print(f"{'pessimistic b':>15}{'te':>9}{'sd':>9}{'te - m':>10}")
+for b in [14, 18, 22, 30, 45]:
+    te = (a + 4 * m + b) / 6
+    sd = (b - a) / 6
+    print(f"{b:>15}{te:>9.2f}{sd:>9.2f}{te - m:>10.2f}")
+
+print()
+print("Doubling the pessimistic estimate from 22 to 45 days adds nearly")
+print("4 days to te and doubles the standard deviation. The pessimistic")
+print("number does most of the work, and it is the one estimators are")
+print("least willing to state honestly.")
+
+print()
+# Optimism bias, quantified.
+print("If every pessimistic estimate is understated by 30%:")
+honest = estimates.copy()
+honest["b_honest"] = honest["a"] + (honest["b"] - honest["a"]) * 1.3
+honest["te_honest"] = (honest["a"] + 4 * honest["m"] + honest["b_honest"]) / 6
+print(f"  total expected effort as estimated  {estimates['te'].sum():>7.1f} days")
+print(f"  total with honest pessimism         {honest['te_honest'].sum():>7.1f} days")
+print(f"  difference                          "
+      f"{honest['te_honest'].sum() - estimates['te'].sum():>7.1f} days "
+      f"({(honest['te_honest'].sum() / estimates['te'].sum() - 1):.1%})")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does the PERT expected time usually exceed the most likely time?",
+      options: [
+        {
+          text: "The pessimistic estimate is typically further from the mode than the optimistic one, so the weighted average pulls upward.",
+          correct: true,
+          explanation:
+            "Exactly. It is the arithmetic behind the observation that projects overrun more often than they underrun — the distribution of durations is right-skewed.",
+        },
+        {
+          text: "Because the formula adds a safety margin.",
+          explanation:
+            "There is no margin term. te is a weighted average, and it exceeds m purely because of the asymmetry in the inputs.",
+        },
+        {
+          text: "Because the most likely estimate is always wrong.",
+          explanation:
+            "The mode may be perfectly accurate as a mode. The point is that the mode is not the mean when a distribution is skewed.",
+        },
+      ],
+    },
+    {
+      prompt: "Two activities both have te = 10 days, but one has sd = 1 and the other sd = 4. Why does the difference matter?",
+      options: [
+        {
+          text: "They carry very different risk, and only the variance distinguishes them when computing the probability of hitting a date.",
+          correct: true,
+          explanation:
+            "Right — variance is what makes PERT more than a smarter average, and it is exactly what lesson 13.4 needs to attach a probability to a delivery commitment.",
+        },
+        {
+          text: "It does not — the schedule depends only on expected durations.",
+          explanation:
+            "The expected finish date does, but the *confidence* in that date depends entirely on the variances along the critical path.",
+        },
+        {
+          text: "The higher-variance activity should be removed from the critical path.",
+          explanation:
+            "Path membership is determined by dependencies and durations, not by variance. High variance is a reason to manage an activity closely, not to reclassify it.",
+        },
+      ],
+    },
+    {
+      prompt: "Which of the three estimates most influences the result?",
+      options: [
+        {
+          text: "The pessimistic estimate — and it is the one people most reliably understate.",
+          correct: true,
+          explanation:
+            "Correct. It drives the variance entirely and shifts te substantially, yet optimism bias makes it the least honest of the three. Eliciting it well is where the effort should go.",
+        },
+        {
+          text: "The most likely estimate, since it carries four-sixths of the weight.",
+          explanation:
+            "It has the largest weight in te, but it contributes nothing at all to the variance, and te is far more sensitive to changes in b than the weights alone suggest.",
+        },
+        {
+          text: "The optimistic estimate, since it sets the floor.",
+          explanation:
+            "It matters, but it is bounded below by zero and people estimate it fairly consistently. The pessimistic tail is unbounded and far more variable.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="354-357" />

@@ -778,7 +778,7 @@ export const chapters: Chapter[] = [
           ["reading-the-fan", "Reading the fan honestly"],
         ],
         {
-          packages: ["numpy", "pandas", "matplotlib"],
+          packages: ["numpy", "pandas", "scipy", "matplotlib"],
           datasets: ["index-prices.csv"],
         },
       ),
@@ -822,7 +822,7 @@ export const chapters: Chapter[] = [
           ["evpi", "The value of perfect information"],
           ["when-it-misleads", "When expected value misleads"],
         ],
-        { packages: ["numpy", "pandas"] },
+        { packages: ["numpy", "pandas", "matplotlib"] },
       ),
       lesson(
         "decision-trees",
@@ -837,7 +837,7 @@ export const chapters: Chapter[] = [
           ["rolling-back", "Rolling back"],
           ["plotting", "Plotting the tree"],
         ],
-        { packages: ["numpy", "networkx", "matplotlib"] },
+        { packages: ["numpy", "pandas", "networkx", "matplotlib"] },
       ),
     ],
   },
@@ -863,7 +863,7 @@ export const chapters: Chapter[] = [
           ["transition-matrix", "The transition matrix"],
           ["one-step", "One step ahead"],
         ],
-        { packages: ["numpy"] },
+        { packages: ["numpy", "pandas"] },
       ),
       lesson(
         "multi-step-prediction",
@@ -878,7 +878,7 @@ export const chapters: Chapter[] = [
           ["n-steps", "n steps ahead"],
           ["convergence-hint", "Something is converging"],
         ],
-        { packages: ["numpy", "matplotlib"] },
+        { packages: ["numpy", "pandas", "matplotlib"] },
       ),
       lesson(
         "equilibrium",
@@ -893,7 +893,7 @@ export const chapters: Chapter[] = [
           ["solving-it", "Solving for it directly"],
           ["eigenvector-view", "The eigenvector view"],
         ],
-        { packages: ["numpy", "scipy"] },
+        { packages: ["numpy", "pandas"] },
       ),
       lesson(
         "absorbing-states",
@@ -908,7 +908,7 @@ export const chapters: Chapter[] = [
           ["fundamental-matrix", "The fundamental matrix"],
           ["expected-steps", "Expected steps and final outcomes"],
         ],
-        { packages: ["numpy"] },
+        { packages: ["numpy", "pandas", "matplotlib"] },
       ),
     ],
   },
@@ -1026,7 +1026,7 @@ export const chapters: Chapter[] = [
           ["expected-time", "Expected time"],
           ["variance", "Variance, and why it matters"],
         ],
-        { packages: ["numpy", "pandas"] },
+        { packages: ["numpy", "pandas", "scipy", "matplotlib"] },
       ),
       lesson(
         "critical-path",
@@ -1057,7 +1057,7 @@ export const chapters: Chapter[] = [
           ["crash-costs", "Crash cost per day"],
           ["what-to-crash", "Choosing what to crash"],
         ],
-        { packages: ["numpy", "pandas", "scipy"] },
+        { packages: ["numpy", "pandas", "scipy", "matplotlib"] },
       ),
     ],
   },
@@ -1083,7 +1083,10 @@ export const chapters: Chapter[] = [
           ["control-limits", "Where the limits come from"],
           ["capability", "Capability indices"],
         ],
-        { packages: ["numpy", "pandas", "matplotlib"] },
+        {
+          packages: ["numpy", "pandas", "scipy", "matplotlib"],
+          datasets: ["qc-measurements.csv"],
+        },
       ),
       lesson(
         "attribute-charts",
@@ -1118,7 +1121,7 @@ export const chapters: Chapter[] = [
           ["subgroup-size", "Subgroup size"],
         ],
         {
-          packages: ["numpy", "pandas", "matplotlib"],
+          packages: ["numpy", "pandas", "scipy", "matplotlib"],
           datasets: ["qc-measurements.csv"],
         },
       ),

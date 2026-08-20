@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { SearchDialog } from "@/components/search/search-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 
 const links: [label: string, href: string][] = [
@@ -22,6 +23,7 @@ export function SiteHeader() {
               {label}
             </Link>
           ))}
+          <SearchDialog />
           <ThemeToggle />
         </nav>
       </div>

@@ -1,0 +1,270 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Build a payoff table from a described decision problem.</li>
+    <li>Apply the maximax, maximin and minimax regret criteria.</li>
+    <li>Explain why three defensible criteria can give three different answers.</li>
+  </ul>
+</Callout>
+
+Sometimes you face a decision where the outcomes depend on something you cannot predict and cannot
+even assign probabilities to. A genuinely novel market, an unprecedented regulatory change, a
+competitor's unannounced strategy.
+
+You still have to decide. This lesson covers what can be said in that situation — and what
+cannot.
+
+<h2 id="payoff-tables">Payoff tables</h2>
+
+Every decision problem of this kind has the same structure:
+
+- **Alternatives** — the courses of action available to you. Rows.
+- **States of nature** — the things that might happen, outside your control. Columns.
+- **Payoffs** — the outcome for each combination. Cells.
+
+The scenario: a manufacturer is deciding how much to expand capacity ahead of an uncertain market.
+Payoffs are the net present value in thousands of pounds.
+
+| | Low demand | Moderate demand | High demand |
+| --- | --- | --- | --- |
+| **Do nothing** | 10 | −5 | −30 |
+| **Small expansion** | −20 | 60 | 80 |
+| **Medium expansion** | −60 | 40 | 140 |
+| **Large expansion** | −120 | 10 | 220 |
+
+Doing nothing is cheapest if demand stays low but forfeits the upside and cedes market share.
+Large expansion is transformative if demand is high and ruinous if it is not.
+
+<Callout title="States of nature must be exhaustive and mutually exclusive">
+  <p>
+    Exactly one state will occur. If two of your columns could both happen, or if some possible
+    future fits none of them, the table is malformed and every criterion computed from it will be
+    wrong. This is the same discipline as defining outcomes in chapter&nbsp;2.
+  </p>
+</Callout>
+
+<h2 id="maximax">Maximax: the optimist</h2>
+
+Find the best possible payoff for each alternative; choose the alternative whose best is best.
+
+$$
+\text{choose } \arg\max_i \left(\max_j\, V_{ij}\right)
+$$
+
+This criterion looks only at the best case and ignores everything else. It is how you decide if
+you believe things will go well — or if you have so little downside exposure that the worst case
+does not matter.
+
+<h2 id="maximin">Maximin: the pessimist</h2>
+
+Find the worst possible payoff for each alternative; choose the alternative whose worst is best.
+
+$$
+\text{choose } \arg\max_i \left(\min_j\, V_{ij}\right)
+$$
+
+Also called the Wald criterion. It optimises the guaranteed floor and ignores the upside entirely.
+This is the right criterion when the worst case is genuinely unsurvivable — bankruptcy, safety
+failure, loss of licence — because in those situations the expected value is irrelevant if you do
+not live to collect it.
+
+<h2 id="minimax-regret">Minimax regret</h2>
+
+The third criterion asks a different question: not *how good is the outcome*, but *how much worse
+is it than what I could have achieved had I known?*
+
+**Regret** is the difference between a cell and the best payoff available in its column:
+
+$$
+R_{ij} = \left(\max_k V_{kj}\right) - V_{ij}
+$$
+
+Then minimise the maximum regret across states:
+
+$$
+\text{choose } \arg\min_i \left(\max_j R_{ij}\right)
+$$
+
+This is the Savage criterion, and it captures something real — the feeling of having chosen badly
+in hindsight — while being less extreme than either maximax or maximin.
+
+<PythonCell label="All three criteria on the same table">
+{`import numpy as np
+import pandas as pd
+
+alternatives = ["do nothing", "small expansion", "medium expansion", "large expansion"]
+states = ["low demand", "moderate demand", "high demand"]
+
+payoffs = np.array([
+    [  10,  -5,  -30],
+    [ -20,  60,   80],
+    [ -60,  40,  140],
+    [-120,  10,  220],
+], dtype=float)
+
+table = pd.DataFrame(payoffs, index=alternatives, columns=states)
+print("Payoff table (NPV, GBP thousands):")
+print(table.to_string())
+
+best_case = payoffs.max(axis=1)
+worst_case = payoffs.min(axis=1)
+
+print()
+print(f"{'alternative':<20}{'best case':>12}{'worst case':>13}")
+for name, best, worst in zip(alternatives, best_case, worst_case):
+    print(f"{name:<20}{best:>12,.0f}{worst:>13,.0f}")
+
+print()
+print(f"MAXIMAX  -> {alternatives[best_case.argmax()]}  "
+      f"(best of the best cases: {best_case.max():,.0f})")
+print(f"MAXIMIN  -> {alternatives[worst_case.argmax()]}  "
+      f"(best of the worst cases: {worst_case.max():,.0f})")`}
+</PythonCell>
+
+<PythonCell label="The regret table">
+{`column_best = payoffs.max(axis=0)
+regret = column_best - payoffs
+
+regret_table = pd.DataFrame(regret, index=alternatives, columns=states)
+print("Best achievable payoff in each state:")
+for state, value in zip(states, column_best):
+    print(f"  {state:<18}{value:>8,.0f}")
+
+print()
+print("Regret table (how much worse than the best you could have done):")
+print(regret_table.to_string())
+
+max_regret = regret.max(axis=1)
+print()
+print(f"{'alternative':<20}{'max regret':>12}")
+for name, value in zip(alternatives, max_regret):
+    print(f"{name:<20}{value:>12,.0f}")
+
+print()
+print(f"MINIMAX REGRET -> {alternatives[max_regret.argmin()]}  "
+      f"(smallest maximum regret: {max_regret.min():,.0f})")
+
+print()
+print("=" * 56)
+print("THE THREE CRITERIA DISAGREE:")
+print(f"  maximax        -> {alternatives[best_case.argmax()]}")
+print(f"  maximin        -> {alternatives[worst_case.argmax()]}")
+print(f"  minimax regret -> {alternatives[max_regret.argmin()]}")
+print("=" * 56)`}
+</PythonCell>
+
+Three defensible criteria, three different recommendations, one payoff table. This is not a defect
+in the methods — it is the honest content of a decision made without probabilities.
+
+What the analysis has done is genuinely useful even so. It has ruled out nothing arbitrarily,
+exposed exactly what each recommendation assumes about your attitude to risk, and made that
+attitude an explicit choice rather than an unexamined one. **The criterion is a statement about
+your risk preferences, and it should be chosen before you see which alternative it favours.**
+
+<Callout title="Choose the criterion first" variant="warning">
+  <p>
+    Computing all three and then picking the one whose answer you like is not decision analysis —
+    it is rationalising a decision you had already made. Decide in advance whether you are
+    protecting a floor, chasing an upside, or minimising hindsight regret, and commit to what that
+    choice implies.
+  </p>
+</Callout>
+
+<PythonCell label="A fourth option: weighting optimism explicitly">
+{`# The Hurwicz criterion blends best and worst case with a coefficient of
+# optimism alpha, so maximax (alpha=1) and maximin (alpha=0) are its endpoints.
+print(f"{'alpha':>7}  " + "".join(f"{name[:12]:>14}" for name in alternatives))
+for alpha in [0.0, 0.25, 0.5, 0.75, 1.0]:
+    values = alpha * best_case + (1 - alpha) * worst_case
+    marks = "".join(
+        f"{value:>13,.1f}" + ("*" if index == values.argmax() else " ")
+        for index, value in enumerate(values)
+    )
+    print(f"{alpha:>7.2f}  {marks}")
+
+print()
+print("* marks the preferred alternative at each level of optimism.")
+print()
+print("Switching points - the alpha at which the choice changes:")
+previous = None
+for alpha in np.linspace(0, 1, 1001):
+    choice = alternatives[(alpha * best_case + (1 - alpha) * worst_case).argmax()]
+    if choice != previous:
+        print(f"  from alpha = {alpha:.3f}: {choice}")
+        previous = choice
+
+print()
+print("Making the switching points explicit is more useful than any single")
+print("recommendation: it tells you how optimistic you would have to be")
+print("before your answer changes.")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "When is the maximin criterion the appropriate one?",
+      options: [
+        {
+          text: "When the worst case is unsurvivable — bankruptcy, a safety failure, loss of licence.",
+          correct: true,
+          explanation:
+            "Right. Expected value is meaningless if a bad draw ends the game. Maximin optimises the guaranteed floor precisely because the floor is what matters.",
+        },
+        {
+          text: "Whenever probabilities are unavailable.",
+          explanation:
+            "All three criteria apply without probabilities. Which one to use depends on your risk posture, not on the absence of probabilities.",
+        },
+        {
+          text: "When the payoff table is small.",
+          explanation:
+            "Table size is irrelevant. Every criterion computes just as easily on four rows as on forty.",
+        },
+      ],
+    },
+    {
+      prompt: "Regret is computed relative to what?",
+      options: [
+        {
+          text: "The best payoff available within the same state of nature — the same column.",
+          correct: true,
+          explanation:
+            "Correct. Regret asks how much worse you did than you could have done *had you known which state would occur*, so the comparison is always within a column.",
+        },
+        {
+          text: "The best payoff in the entire table.",
+          explanation:
+            "That would penalise alternatives for outcomes that were never achievable in that state. Regret compares within a column, not across the whole table.",
+        },
+        {
+          text: "The expected payoff of the alternative.",
+          explanation:
+            "Expected values need probabilities, which this lesson deliberately does without. Regret is defined purely from the payoff table.",
+        },
+      ],
+    },
+    {
+      prompt: "The three criteria recommend three different alternatives. What should you conclude?",
+      options: [
+        {
+          text: "The answer genuinely depends on your risk attitude, which the analysis has now made explicit.",
+          correct: true,
+          explanation:
+            "Exactly. That is the real output: not a recommendation, but a clear statement of what each recommendation assumes. The Hurwicz switching points make it sharper still.",
+        },
+        {
+          text: "The payoff table must contain an error.",
+          explanation:
+            "Disagreement among criteria is normal and expected — they optimise genuinely different things. It is not evidence of a mistake.",
+        },
+        {
+          text: "Take the recommendation that two of the three agree on.",
+          explanation:
+            "Voting among criteria has no theoretical basis. Each answers a different question, so a majority among them means nothing.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="272-279" />

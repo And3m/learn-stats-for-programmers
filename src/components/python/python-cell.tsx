@@ -21,7 +21,6 @@ export function PythonCell({
   label,
   packages,
   datasets,
-  autoRun = false,
 }: {
   /** Source can be passed as a child template string or via `code`. */
   children?: string;
@@ -29,7 +28,6 @@ export function PythonCell({
   label?: string;
   packages?: PyPackage[];
   datasets?: string[];
-  autoRun?: boolean;
 }) {
   const source = (code ?? children ?? "").replace(/^\n/, "").replace(/\s+$/, "");
   const lessonRuntime = useLessonRuntime();
@@ -43,8 +41,14 @@ export function PythonCell({
   const [running, setRunning] = useState(false);
   const [hasRun, setHasRun] = useState(false);
 
+  // The editor's Ctrl+Enter handler is memoised, so it must not close over a
+  // changing `execute`. A ref keeps the latest source reachable without making
+  // `execute` — and therefore the CodeMirror extensions — rebuild on every
+  // keystroke.
   const valueRef = useRef(value);
-  valueRef.current = value;
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   const effectivePackages = packages ?? lessonRuntime.packages;
   const effectiveDatasets = datasets ?? lessonRuntime.datasets;
@@ -69,10 +73,6 @@ export function PythonCell({
     setError(outcome.error);
     setRunning(false);
   }, [run, effectivePackages, effectiveDatasets]);
-
-  useEffect(() => {
-    if (autoRun && status === "ready" && !hasRun) void execute();
-  }, [autoRun, status, hasRun, execute]);
 
   const reset = () => {
     setValue(source);

@@ -1,0 +1,300 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Compute expected monetary value from a payoff table and state probabilities.</li>
+    <li>Calculate the expected value of perfect information.</li>
+    <li>Recognise the situations where expected value is the wrong criterion.</li>
+  </ul>
+</Callout>
+
+Once you can attach probabilities to the states — from history, from a model, or from a
+well-calibrated judgement — a fourth criterion becomes available, and it is the one with the
+strongest theoretical footing.
+
+<h2 id="emv">Expected monetary value</h2>
+
+The probability-weighted average payoff for each alternative:
+
+$$
+EMV_i = \sum_j P(s_j)\, V_{ij}
+$$
+
+Choose the alternative with the highest EMV. This is the criterion that is *correct in the long
+run*: if you face this decision repeatedly under the same conditions, consistently taking the
+highest EMV maximises your total.
+
+That conditional clause is doing a lot of work, and the last section of this lesson is about when
+it fails to hold.
+
+<PythonCell label="Expected value on the expansion decision">
+{`import numpy as np
+import pandas as pd
+
+alternatives = ["do nothing", "small expansion", "medium expansion", "large expansion"]
+states = ["low demand", "moderate demand", "high demand"]
+
+payoffs = np.array([
+    [  10,  -5,  -30],
+    [ -20,  60,   80],
+    [ -60,  40,  140],
+    [-120,  10,  220],
+], dtype=float)
+
+probabilities = np.array([0.25, 0.45, 0.30])
+assert probabilities.sum() == 1.0
+
+emv = payoffs @ probabilities
+
+table = pd.DataFrame(payoffs, index=alternatives, columns=states)
+table["EMV"] = emv
+print("State probabilities: " +
+      ", ".join(f"{s} {p:.0%}" for s, p in zip(states, probabilities)))
+print()
+print(table.round(2).to_string())
+
+order = np.argsort(-emv)
+print()
+print("Ranked by expected monetary value:")
+for rank, index in enumerate(order, start=1):
+    print(f"  {rank}. {alternatives[index]:<20}{emv[index]:>9,.2f}")
+
+print()
+print(f"EMV recommends: {alternatives[emv.argmax()]}")
+print(f"The margin over second place is only "
+      f"{emv[order[0]] - emv[order[1]]:,.2f} thousand - close enough that")
+print("the probabilities themselves deserve scrutiny.")`}
+</PythonCell>
+
+That narrow margin is worth taking seriously. When two alternatives are separated by less than the
+uncertainty in your probability estimates, EMV has not really chosen between them, and other
+considerations — the shape of the downside, strategic flexibility, reversibility — should decide.
+
+<PythonCell label="How sensitive is the answer to the probabilities?">
+{`import matplotlib.pyplot as plt
+
+# Sweep the probability of high demand, splitting the rest between low and
+# moderate in their original ratio.
+high_range = np.linspace(0, 0.7, 200)
+curves = np.empty((len(alternatives), len(high_range)))
+
+for column, p_high in enumerate(high_range):
+    remainder = 1 - p_high
+    p_low = remainder * 0.25 / 0.70
+    p_moderate = remainder * 0.45 / 0.70
+    curves[:, column] = payoffs @ np.array([p_low, p_moderate, p_high])
+
+fig, ax = plt.subplots()
+for index, name in enumerate(alternatives):
+    ax.plot(high_range, curves[index], linewidth=2, label=name)
+ax.axvline(0.30, linewidth=1, linestyle="--")
+ax.set_xlabel("P(high demand)")
+ax.set_ylabel("expected monetary value")
+ax.set_title("Which alternative wins depends on P(high demand)")
+ax.legend(fontsize=8)
+
+print("Preferred alternative as P(high demand) varies:")
+previous = None
+for column, p_high in enumerate(high_range):
+    choice = alternatives[curves[:, column].argmax()]
+    if choice != previous:
+        print(f"  from P(high) = {p_high:.3f}: {choice}")
+        previous = choice
+
+print()
+print("The current estimate is 0.30, which sits close to a switching point.")
+print("A modest revision upward would change the recommendation - worth")
+print("knowing before committing capital.")`}
+</PythonCell>
+
+<h2 id="evpi">The value of perfect information</h2>
+
+Suppose an oracle could tell you which state will occur, before you decide. You would then pick
+the best alternative for that state every time, earning
+
+$$
+EV_{\text{PI}} = \sum_j P(s_j)\,\max_i V_{ij}
+$$
+
+The **expected value of perfect information** is what that clairvoyance is worth over deciding
+under uncertainty:
+
+$$
+EVPI = EV_{\text{PI}} - \max_i EMV_i
+$$
+
+This is genuinely useful, because it puts a hard ceiling on research spending. No market study,
+consultant or pilot programme can be worth more than EVPI, since none of them delivers *perfect*
+information. If a proposed study costs more than the EVPI, you can decline it without evaluating
+its methodology.
+
+<PythonCell label="EVPI, and what it caps">
+{`best_per_state = payoffs.max(axis=0)
+best_choice_per_state = [alternatives[i] for i in payoffs.argmax(axis=0)]
+
+print("With perfect foreknowledge you would choose:")
+for state, probability, value, choice in zip(
+    states, probabilities, best_per_state, best_choice_per_state
+):
+    print(f"  if {state:<18} ({probability:.0%})  ->  {choice:<18} "
+          f"payoff {value:>7,.0f}")
+
+ev_with_information = probabilities @ best_per_state
+best_emv = emv.max()
+evpi = ev_with_information - best_emv
+
+print()
+print(f"expected value WITH perfect information   {ev_with_information:>9,.2f}")
+print(f"best expected value without it            {best_emv:>9,.2f}")
+print(f"EVPI                                      {evpi:>9,.2f}")
+
+print()
+print(f"So no study, pilot or consultant is worth more than "
+      f"{evpi:,.0f} thousand pounds,")
+print("because none of them can do better than perfect information.")
+
+print()
+# EVPI equals the minimum expected regret - the same quantity, seen twice.
+regret = payoffs.max(axis=0) - payoffs
+expected_regret = regret @ probabilities
+print("EVPI equals the minimum expected regret:")
+for name, value in zip(alternatives, expected_regret):
+    marker = "  <- minimum" if abs(value - expected_regret.min()) < 1e-9 else ""
+    print(f"  {name:<20}{value:>9,.2f}{marker}")
+print(f"  minimum expected regret {expected_regret.min():,.2f}  =  EVPI {evpi:,.2f}")`}
+</PythonCell>
+
+That identity — EVPI equals the minimum expected regret — is a satisfying check on both
+calculations, and it connects this lesson back to the regret criterion from the previous one.
+
+<h2 id="when-it-misleads">When expected value misleads</h2>
+
+EMV is correct in the long run for a decision maker who is indifferent to risk. Three situations
+break at least one of those conditions.
+
+**The decision is not repeated.** "Correct on average over many trials" is cold comfort for a
+one-off bet-the-company choice. You get one draw, and the average is not what you receive.
+
+**Ruin is possible.** If a bad outcome ends the organisation, there is no long run to average
+over. A gamble with positive EMV and a 5% chance of insolvency is not obviously worth taking, and
+repeating it makes eventual ruin near-certain.
+
+**Utility is not linear in money.** Losing £100,000 usually hurts more than gaining £100,000
+helps, and the first million matters more than the tenth. Expected *utility* — the payoff passed
+through a concave function before averaging — captures this, and it will often prefer a lower-EMV
+alternative with a tighter spread.
+
+<PythonCell label="Expected utility prefers a different alternative">
+{`# A concave utility function: the same money is worth less at the margin
+# as wealth grows, and losses bite harder than gains reward.
+def utility(amount, risk_aversion=0.012):
+    return (1 - np.exp(-risk_aversion * (amount + 150))) / risk_aversion
+
+utilities = utility(payoffs)
+expected_utility = utilities @ probabilities
+
+comparison = pd.DataFrame({
+    "EMV": emv,
+    "worst case": payoffs.min(axis=1),
+    "spread": payoffs.max(axis=1) - payoffs.min(axis=1),
+    "expected utility": expected_utility,
+}, index=alternatives)
+print(comparison.round(3).to_string())
+
+print()
+print(f"EMV prefers               {alternatives[emv.argmax()]}")
+print(f"Expected utility prefers  {alternatives[expected_utility.argmax()]}")
+
+print()
+print("Certainty equivalent - the guaranteed sum you would accept instead:")
+for name, u in zip(alternatives, expected_utility):
+    certainty = -np.log(1 - 0.012 * u) / 0.012 - 150
+    print(f"  {name:<20}{certainty:>9,.2f}")
+
+print()
+print("The risk premium is the gap between EMV and the certainty equivalent:")
+for name, value, u in zip(alternatives, emv, expected_utility):
+    certainty = -np.log(1 - 0.012 * u) / 0.012 - 150
+    print(f"  {name:<20}{value - certainty:>9,.2f}")
+print()
+print("Wider-spread alternatives carry a larger risk premium - which is")
+print("exactly what a risk-averse decision maker means by 'riskier'.")`}
+</PythonCell>
+
+<Callout title="EMV is a default, not a law" variant="pitfall">
+  <p>
+    Expected value is the right default for decisions that recur at a scale your organisation can
+    absorb — pricing, inventory, routine capacity choices. It is the wrong default for one-off
+    decisions with catastrophic downside, which is precisely where it is most often applied because
+    it feels rigorous.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does EVPI put a ceiling on?",
+      options: [
+        {
+          text: "How much you should spend on any research into which state will occur.",
+          correct: true,
+          explanation:
+            "Right, and it is immediately actionable: no study can deliver more than perfect information, so a study costing more than EVPI can be declined without further analysis.",
+        },
+        {
+          text: "The maximum payoff achievable in the problem.",
+          explanation:
+            "That is the largest cell in the table. EVPI is the *incremental* value of knowing the state in advance, which is a much smaller quantity.",
+        },
+        {
+          text: "The expected value of the best alternative.",
+          explanation:
+            "That is max EMV, which EVPI is computed by subtracting. EVPI is the gap between deciding with and without foreknowledge.",
+        },
+      ],
+    },
+    {
+      prompt: "When is expected monetary value the wrong criterion?",
+      options: [
+        {
+          text: "For one-off decisions where a bad outcome would be catastrophic.",
+          correct: true,
+          explanation:
+            "Correct. 'Right on average' requires a long run to average over. If a bad draw ends the organisation, there is no long run, and expected utility or a maximin-style floor is more appropriate.",
+        },
+        {
+          text: "Whenever the probabilities are estimated rather than known exactly.",
+          explanation:
+            "Estimated probabilities are the normal case, and sensitivity analysis handles the resulting uncertainty. That does not invalidate the criterion.",
+        },
+        {
+          text: "When there are more than three states of nature.",
+          explanation:
+            "The number of states has no bearing on whether EMV is appropriate. The issues are repetition, ruin and risk attitude.",
+        },
+      ],
+    },
+    {
+      prompt: "EVPI turns out to equal the minimum expected regret. Why?",
+      options: [
+        {
+          text: "Both measure the average shortfall against the best choice for each state.",
+          correct: true,
+          explanation:
+            "Exactly. Expected regret for the best alternative is the average amount by which it falls short of perfect play, which is precisely what perfect information would recover.",
+        },
+        {
+          text: "Coincidence for this particular payoff table.",
+          explanation:
+            "It is an algebraic identity that holds for every payoff table, which makes it a useful cross-check on both calculations.",
+        },
+        {
+          text: "Because the probabilities happen to be evenly spread.",
+          explanation:
+            "They are not evenly spread here — 25/45/30 — and the identity holds regardless of the probabilities.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="279-282" />

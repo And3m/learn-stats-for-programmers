@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { ResumeCard } from "@/components/progress/resume-card";
 import { chapterHref, chapterMinutes, chapters, courseStats } from "@/lib/content";
 
 export default function HomePage() {
@@ -46,6 +47,8 @@ export default function HomePage() {
             and forests, time series, optimisation, simulation, Markov chains, Benford&rsquo;s law,
             project scheduling, and statistical quality control.
           </p>
+
+          <ResumeCard />
 
           <div className="home__cta">
             <Link className="btn btn--primary" href="/chapters/groundwork/why-quantitative-thinking">

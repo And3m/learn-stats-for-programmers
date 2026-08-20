@@ -1,0 +1,248 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Use matrix powers to project many steps ahead in one operation.</li>
+    <li>Interpret the entries of an n-step transition matrix.</li>
+    <li>Recognise convergence, and explain why the starting point stops mattering.</li>
+  </ul>
+</Callout>
+
+<h2 id="matrix-powers">Matrix powers</h2>
+
+One step is $\pi_1 = \pi_0 P$. Two steps is $\pi_2 = \pi_1 P = \pi_0 P^2$. In general:
+
+$$
+\pi_n = \pi_0 P^{\,n}
+$$
+
+The matrix $P^n$ has a direct interpretation of its own: $(P^n)_{ij}$ is the probability of being
+in state $j$ after exactly $n$ steps, having started in state $i$. It is not merely a computational
+device — it is the $n$-step transition matrix, and it answers questions the one-step matrix cannot.
+
+This follows from the Chapman-Kolmogorov identity, which is the law of total probability applied
+across intermediate states:
+
+$$
+(P^{m+n})_{ij} = \sum_k (P^m)_{ik}\,(P^n)_{kj}
+$$
+
+To get from $i$ to $j$ in $m+n$ steps you must be *somewhere* after $m$ steps; sum over the
+possibilities and you have matrix multiplication.
+
+<PythonCell label="n-step transition matrices">
+{`import numpy as np
+import pandas as pd
+
+states = ["Brand A", "Brand B", "Brand C"]
+P = np.array([
+    [0.85, 0.10, 0.05],
+    [0.08, 0.82, 0.10],
+    [0.06, 0.12, 0.82],
+])
+
+for n in [1, 3, 12, 60]:
+    Pn = np.linalg.matrix_power(P, n)
+    print(f"P^{n}  (probability of being in each state after {n} months)")
+    print(pd.DataFrame(Pn, index=states, columns=states).round(4).to_string())
+    print()
+
+print("Read a row: 'starting from Brand A, where am I after n months?'")
+print("Read a column: 'who ends up in Brand B, and where did they start?'")
+
+print()
+P12 = np.linalg.matrix_power(P, 12)
+print(f"A customer with Brand A today has a {P12[0, 0]:.1%} chance of still")
+print(f"being with Brand A in a year, and a {P12[0, 2]:.1%} chance of having")
+print("moved to Brand C.")
+
+print()
+print("Chapman-Kolmogorov, verified:")
+print(f"  P^7 computed directly equals P^3 @ P^4: "
+      f"{np.allclose(np.linalg.matrix_power(P, 7), np.linalg.matrix_power(P, 3) @ np.linalg.matrix_power(P, 4))}")`}
+</PythonCell>
+
+<h2 id="n-steps">n steps ahead</h2>
+
+Projecting the market forward is now a single operation rather than a loop. It is also worth
+noting how quickly the projection stops changing.
+
+<PythonCell label="Projecting the market forward">
+{`import matplotlib.pyplot as plt
+
+pi_0 = np.array([0.40, 0.35, 0.25])
+
+horizon = 48
+trajectory = np.empty((horizon + 1, len(states)))
+trajectory[0] = pi_0
+for month in range(1, horizon + 1):
+    trajectory[month] = trajectory[month - 1] @ P
+
+print(f"{'month':>7}" + "".join(f"{s:>11}" for s in states) + f"{'change':>10}")
+for month in [0, 1, 3, 6, 12, 24, 36, 48]:
+    change = (np.abs(trajectory[month] - trajectory[month - 1]).sum()
+              if month > 0 else float("nan"))
+    row = "".join(f"{v:>11.5f}" for v in trajectory[month])
+    print(f"{month:>7}{row}" + (f"{change:>10.6f}" if month > 0 else f"{'-':>10}"))
+
+fig, ax = plt.subplots()
+for index, state in enumerate(states):
+    ax.plot(trajectory[:, index], linewidth=2, label=state)
+ax.set_xlabel("months")
+ax.set_ylabel("market share")
+ax.set_title("Shares converge, and stop moving")
+ax.legend(fontsize=8)
+
+print()
+print("The month-on-month change shrinks geometrically. By month 48 the")
+print("shares are stable to five decimal places.")`}
+</PythonCell>
+
+<h2 id="convergence-hint">Something is converging</h2>
+
+Two things happen as $n$ grows, and the second is the more striking.
+
+**The state vector settles.** Successive projections differ by less and less.
+
+**Every row of $P^n$ becomes identical.** That is the remarkable part: after enough steps, the
+probability of being in each state no longer depends on where you started. The chain forgets its
+initial condition entirely.
+
+<PythonCell label="The chain forgets where it started">
+{`print("How different are the rows of P^n from one another?")
+print(f"{'n':>5}{'max row spread':>18}")
+for n in [1, 2, 5, 10, 25, 50, 100, 200]:
+    Pn = np.linalg.matrix_power(P, n)
+    spread = (Pn.max(axis=0) - Pn.min(axis=0)).max()
+    print(f"{n:>5}{spread:>18.10f}")
+
+print()
+Pn = np.linalg.matrix_power(P, 200)
+print("P^200 - every row is the same vector:")
+print(pd.DataFrame(Pn, index=states, columns=states).round(6).to_string())
+
+print()
+print("Three very different starting points, all converging to the same place:")
+starts = {
+    "everyone with A": np.array([1.0, 0.0, 0.0]),
+    "everyone with C": np.array([0.0, 0.0, 1.0]),
+    "evenly split":    np.array([1 / 3, 1 / 3, 1 / 3]),
+}
+for label, start in starts.items():
+    after = start @ np.linalg.matrix_power(P, 200)
+    print(f"  {label:<18}" + "  ".join(f"{v:.6f}" for v in after))
+
+fig, ax = plt.subplots()
+for label, start in starts.items():
+    path = [start]
+    for _ in range(40):
+        path.append(path[-1] @ P)
+    ax.plot([row[0] for row in path], linewidth=2, label=label)
+ax.set_xlabel("months")
+ax.set_ylabel("Brand A share")
+ax.set_title("Different starts, one destination")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+<Callout title="Convergence is not automatic" variant="warning">
+  <p>
+    This chain converges because it is <strong>irreducible</strong> (every state reachable from
+    every other) and <strong>aperiodic</strong> (it does not cycle with a fixed period). A chain
+    that strictly alternates between two states — <code>[[0,1],[1,0]]</code> — never settles; it
+    oscillates forever. And a chain with absorbing states converges to something that <em>does</em>{" "}
+    depend on where you started, which is lesson&nbsp;11.4.
+  </p>
+</Callout>
+
+<PythonCell label="A chain that does not converge">
+{`periodic = np.array([
+    [0.0, 1.0],
+    [1.0, 0.0],
+])
+
+print("A strictly alternating chain:")
+start = np.array([1.0, 0.0])
+current = start.copy()
+for step in range(6):
+    print(f"  step {step}: {np.round(current, 4)}")
+    current = current @ periodic
+
+print()
+print("P^n alternates between the identity and the swap - forever:")
+for n in [10, 11, 100, 101]:
+    print(f"  P^{n:<4} =\\n{np.linalg.matrix_power(periodic, n)}")
+
+print()
+print("This chain is irreducible but PERIODIC with period 2, so it has no")
+print("limiting distribution - though it does still have a stationary one,")
+print("which the next lesson computes.")`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does the entry (P⁵)₂₃ represent?",
+      options: [
+        {
+          text: "The probability of being in state 3 after exactly 5 steps, having started in state 2.",
+          correct: true,
+          explanation:
+            "Right — P^n is the n-step transition matrix, and this follows from Chapman-Kolmogorov: summing over all intermediate paths is exactly matrix multiplication.",
+        },
+        {
+          text: "The probability of moving from state 2 to state 3 on the fifth step specifically.",
+          explanation:
+            "That would depend on where the chain is at step four. P^n gives the total probability of being in state 3 after five steps, across every route.",
+        },
+        {
+          text: "The average number of visits to state 3 in five steps.",
+          explanation:
+            "Expected visit counts come from summing powers of P, not from a single power. That machinery appears in lesson 11.4 as the fundamental matrix.",
+        },
+      ],
+    },
+    {
+      prompt: "Every row of P²⁰⁰ is identical. What does that mean?",
+      options: [
+        {
+          text: "The chain has forgotten its starting state — long-run behaviour is independent of where it began.",
+          correct: true,
+          explanation:
+            "Exactly, and that shared row is the steady-state distribution. It holds for chains that are irreducible and aperiodic.",
+        },
+        {
+          text: "The transition matrix was doubly stochastic.",
+          explanation:
+            "Double stochasticity would force a *uniform* steady state. This chain's steady state is not uniform, and it is not doubly stochastic.",
+        },
+        {
+          text: "The chain has stopped moving.",
+          explanation:
+            "Individual customers keep switching every month. What has stabilised is the aggregate distribution, not any individual's state.",
+        },
+      ],
+    },
+    {
+      prompt: "The chain [[0,1],[1,0]] never settles down. Why?",
+      options: [
+        {
+          text: "It is periodic — it alternates with period 2, so P^n never converges.",
+          correct: true,
+          explanation:
+            "Correct. Convergence to a limiting distribution requires aperiodicity as well as irreducibility. This chain is irreducible but strictly periodic.",
+        },
+        {
+          text: "It is reducible — some state cannot be reached.",
+          explanation:
+            "Both states are reachable from both, so it is irreducible. Periodicity is the obstruction here.",
+        },
+        {
+          text: "Its rows do not sum to 1.",
+          explanation:
+            "Both rows sum to exactly 1. It is a perfectly valid transition matrix that simply has no limiting distribution.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="300-307" />

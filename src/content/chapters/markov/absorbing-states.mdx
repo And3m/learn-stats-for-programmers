@@ -1,0 +1,305 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Identify absorbing states and put a chain into canonical form.</li>
+    <li>Compute the fundamental matrix and say what its entries mean.</li>
+    <li>Predict how long until absorption, and which absorbing state wins.</li>
+  </ul>
+</Callout>
+
+<h2 id="what-absorbs">What makes a state absorbing</h2>
+
+A state $i$ is **absorbing** if $P_{ii} = 1$: once entered, it is never left. A chain with at least
+one absorbing state, reachable from every transient state, is an **absorbing chain**.
+
+These chains behave completely differently from the previous lessons'. There is no interesting
+steady state — eventually everything ends up absorbed, so the limiting distribution puts all its
+mass on the absorbing states. The interesting questions are different:
+
+- **How long** until absorption?
+- **Which** absorbing state, when there is more than one?
+- **How much time** is spent in each transient state along the way?
+
+The scenario: a customer lifecycle. Trial, active and at-risk are transient; churned and upgraded
+are absorbing.
+
+<PythonCell label="An absorbing chain">
+{`import numpy as np
+import pandas as pd
+
+states = ["trial", "active", "at risk", "churned", "upgraded"]
+transient = ["trial", "active", "at risk"]
+absorbing = ["churned", "upgraded"]
+
+P = np.array([
+    # trial  active  at risk  churned  upgraded
+    [0.30,   0.45,   0.10,    0.13,    0.02],   # trial
+    [0.00,   0.82,   0.09,    0.03,    0.06],   # active
+    [0.00,   0.25,   0.45,    0.28,    0.02],   # at risk
+    [0.00,   0.00,   0.00,    1.00,    0.00],   # churned   (absorbing)
+    [0.00,   0.00,   0.00,    0.00,    1.00],   # upgraded  (absorbing)
+])
+
+print(pd.DataFrame(P, index=states, columns=states).to_string())
+assert np.allclose(P.sum(axis=1), 1.0)
+
+print()
+print("Absorbing states (P_ii = 1):")
+for index, state in enumerate(states):
+    if np.isclose(P[index, index], 1.0):
+        print(f"  {state}")
+
+print()
+print("Where does everyone end up? Just take a very high power:")
+limit = np.linalg.matrix_power(P, 3000)
+print(pd.DataFrame(limit, index=states, columns=states).round(6).to_string())
+print()
+print("All the mass has moved into the absorbing columns. That is why the")
+print("steady-state machinery from the last lesson has nothing to say here.")`}
+</PythonCell>
+
+<h2 id="fundamental-matrix">The fundamental matrix</h2>
+
+Reorder the states so transient ones come first, giving the **canonical form**:
+
+$$
+P = \begin{bmatrix} Q & R \\ 0 & I \end{bmatrix}
+$$
+
+where $Q$ holds transient-to-transient probabilities, $R$ transient-to-absorbing, and the bottom
+row expresses that absorbing states never leave.
+
+The **fundamental matrix** is
+
+$$
+N = (I - Q)^{-1}
+$$
+
+and its entries have a precise meaning: $N_{ij}$ is the **expected number of visits to transient
+state $j$, starting from transient state $i$**, before absorption.
+
+Why the inverse? Because $N = I + Q + Q^2 + Q^3 + \cdots$ — the expected visit count is the sum
+over all step counts of the probability of being there at that step. That geometric series sums to
+$(I - Q)^{-1}$ exactly when $Q$'s spectral radius is below one, which is guaranteed when every
+transient state can reach absorption.
+
+<PythonCell label="Q, R and N">
+{`transient_index = [states.index(s) for s in transient]
+absorbing_index = [states.index(s) for s in absorbing]
+
+Q = P[np.ix_(transient_index, transient_index)]
+R = P[np.ix_(transient_index, absorbing_index)]
+
+print("Q - transient to transient:")
+print(pd.DataFrame(Q, index=transient, columns=transient).to_string())
+print()
+print("R - transient to absorbing:")
+print(pd.DataFrame(R, index=transient, columns=absorbing).to_string())
+
+N = np.linalg.inv(np.eye(len(transient)) - Q)
+print()
+print("N = (I - Q)^-1 - expected visits to each transient state:")
+print(pd.DataFrame(N, index=transient, columns=transient).round(4).to_string())
+
+print()
+print("Confirming N is the sum of the series I + Q + Q^2 + ...:")
+series = np.eye(len(transient))
+term = np.eye(len(transient))
+for _ in range(2000):
+    term = term @ Q
+    series = series + term
+print(f"  max difference from the inverse: {np.abs(series - N).max():.2e}")
+
+print()
+print("Reading N: a customer starting in 'trial' spends on average")
+print(f"  {N[0, 0]:.3f} months in trial")
+print(f"  {N[0, 1]:.3f} months active")
+print(f"  {N[0, 2]:.3f} months at risk")`}
+</PythonCell>
+
+<h2 id="expected-steps">Expected steps and final outcomes</h2>
+
+Two results follow immediately from $N$.
+
+**Expected steps to absorption** is the row sum of $N$:
+
+$$
+t = N\mathbf{1}
+$$
+
+Total time before absorption is the sum of time spent in each transient state, which is exactly
+what a row of $N$ contains.
+
+**Absorption probabilities** are
+
+$$
+B = NR
+$$
+
+$B_{ij}$ is the probability of eventually being absorbed into state $j$, starting from transient
+state $i$. The reasoning: spend $N_{ik}$ expected visits in each transient state $k$, and from
+each of those visits absorb into $j$ with probability $R_{kj}$.
+
+<PythonCell label="How long, and where to">
+{`steps_to_absorption = N.sum(axis=1)
+B = N @ R
+
+print("Expected months before absorption:")
+for state, months in zip(transient, steps_to_absorption):
+    print(f"  starting from {state:<10}{months:>8.3f} months")
+
+print()
+print("Probability of each final outcome:")
+outcomes = pd.DataFrame(B, index=transient, columns=absorbing)
+print(outcomes.round(4).to_string())
+print()
+print(f"rows sum to 1: {np.allclose(B.sum(axis=1), 1.0)}")
+
+print()
+print("Read the top row: a customer entering trial today has a")
+print(f"  {B[0, 1]:.1%} chance of eventually upgrading, and a")
+print(f"  {B[0, 0]:.1%} chance of eventually churning,")
+print(f"  after an average of {steps_to_absorption[0]:.1f} months.")
+
+print()
+print("An at-risk customer is in much worse shape:")
+print(f"  {B[2, 1]:.1%} upgrade, {B[2, 0]:.1%} churn, "
+      f"resolved within {steps_to_absorption[2]:.1f} months on average.")
+
+print()
+# The variance of absorption time matters as much as the mean.
+variance = (2 * N - np.eye(len(transient))) @ steps_to_absorption - steps_to_absorption ** 2
+print("Absorption time is highly variable:")
+for state, mean, var in zip(transient, steps_to_absorption, variance):
+    print(f"  {state:<10} mean {mean:>7.2f}   sd {np.sqrt(var):>7.2f} months")`}
+</PythonCell>
+
+<PythonCell label="What would an intervention be worth?">
+{`import matplotlib.pyplot as plt
+
+def outcomes_for(at_risk_recovery):
+    """Recompute the model if at-risk customers recover more often."""
+    modified = P.copy()
+    row = states.index("at risk")
+    churn_index, active_index = states.index("churned"), states.index("active")
+    # Move probability mass from churn back into active.
+    shift = at_risk_recovery - P[row, active_index]
+    modified[row, active_index] += shift
+    modified[row, churn_index] -= shift
+
+    q = modified[np.ix_(transient_index, transient_index)]
+    r = modified[np.ix_(transient_index, absorbing_index)]
+    n = np.linalg.inv(np.eye(len(transient)) - q)
+    return (n @ r)[0, 1], n.sum(axis=1)[0]      # P(upgrade | trial), months
+
+recoveries = np.linspace(0.25, 0.55, 40)
+upgrade_rates, lifetimes = zip(*[outcomes_for(value) for value in recoveries])
+
+print(f"{'at-risk recovery':>18}{'P(upgrade)':>13}{'months':>10}")
+for value in [0.25, 0.30, 0.35, 0.45, 0.55]:
+    upgrade, months = outcomes_for(value)
+    print(f"{value:>18.2f}{upgrade:>13.4f}{months:>10.2f}")
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.4))
+left.plot(recoveries, upgrade_rates, linewidth=2)
+left.axvline(P[states.index("at risk"), states.index("active")], linewidth=1, linestyle="--")
+left.set_xlabel("P(at risk -> active)")
+left.set_ylabel("P(eventually upgrade)")
+left.set_title("Value of a save campaign")
+
+right.plot(recoveries, lifetimes, linewidth=2)
+right.set_xlabel("P(at risk -> active)")
+right.set_ylabel("expected months")
+right.set_title("Effect on customer lifetime")
+plt.tight_layout()
+
+baseline_upgrade, baseline_months = outcomes_for(0.25)
+improved_upgrade, improved_months = outcomes_for(0.40)
+print()
+print("Raising at-risk recovery from 25% to 40% would:")
+print(f"  lift the eventual upgrade rate from {baseline_upgrade:.1%} to {improved_upgrade:.1%}")
+print(f"  extend expected lifetime from {baseline_months:.1f} to {improved_months:.1f} months")
+print()
+print("That is a concrete, defensible number to weigh a retention")
+print("programme against - which is what the fundamental matrix buys you.")`}
+</PythonCell>
+
+<Callout title="The model assumes constant transition rates" variant="warning">
+  <p>
+    Everything above rests on the transition probabilities staying fixed. In practice churn rates
+    move with the season, the product and the competition, and the Markov property is at its
+    weakest exactly where it matters most — an at-risk customer who has recovered twice before is
+    genuinely different from one newly at risk. Treat these figures as a well-structured baseline,
+    not a forecast.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does the entry N₁₂ of the fundamental matrix represent?",
+      options: [
+        {
+          text: "The expected number of visits to transient state 2, starting from transient state 1, before absorption.",
+          correct: true,
+          explanation:
+            "Right — and it follows from N = I + Q + Q² + …, which sums the probability of being in state 2 at each step. Row sums then give total time to absorption.",
+        },
+        {
+          text: "The probability of moving from state 1 to state 2 before absorption.",
+          explanation:
+            "N counts expected *visits*, which can exceed 1 — the chain may return to a state many times. Probabilities cannot exceed 1.",
+        },
+        {
+          text: "The probability of being absorbed into state 2 from state 1.",
+          explanation:
+            "That is an entry of B = NR. N concerns time spent among the transient states.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does the steady-state analysis from the previous lesson not apply here?",
+      options: [
+        {
+          text: "The chain is reducible — all mass ends up in the absorbing states, so the limit is trivial and depends on the start.",
+          correct: true,
+          explanation:
+            "Correct. There is no unique interesting equilibrium; the useful questions become how long absorption takes and which absorbing state is reached.",
+        },
+        {
+          text: "Because the transition matrix rows no longer sum to 1.",
+          explanation:
+            "They still do — an absorbing state's row is a 1 on the diagonal. Validity is not the issue; reducibility is.",
+        },
+        {
+          text: "Because absorbing chains are periodic.",
+          explanation:
+            "An absorbing state has a self-loop, which makes the chain aperiodic. The obstruction is reducibility.",
+        },
+      ],
+    },
+    {
+      prompt: "B = NR gives absorption probabilities. What is the reasoning behind that product?",
+      options: [
+        {
+          text: "Spend N visits in each transient state, and from each visit absorb into j with probability R.",
+          correct: true,
+          explanation:
+            "Exactly — summing expected visits weighted by the per-visit absorption probability over all transient states is precisely the matrix product NR.",
+        },
+        {
+          text: "N normalises R so its rows sum to 1.",
+          explanation:
+            "The rows of B do sum to 1, but that is a consequence of every path eventually being absorbed, not of N acting as a normaliser.",
+        },
+        {
+          text: "It is the stationary distribution restricted to the absorbing states.",
+          explanation:
+            "The stationary distribution is degenerate here and does not depend on the starting state. B does, which is exactly what makes it useful.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="311-318" />

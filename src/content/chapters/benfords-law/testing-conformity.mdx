@@ -1,0 +1,300 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Run a chi-square goodness-of-fit test against Benford's law.</li>
+    <li>Compute mean absolute deviation and apply its conventional thresholds.</li>
+    <li>Explain why the two measures disagree on large samples.</li>
+  </ul>
+</Callout>
+
+The dataset for this chapter is 2,400 supplier payments from a single financial year, spanning
+four orders of magnitude. The conditions from the previous lesson are satisfied, so a Benford test
+is legitimate.
+
+<h2 id="chi-square">The chi-square test</h2>
+
+The chi-square goodness-of-fit test compares observed digit counts against Benford's expected
+counts:
+
+$$
+\chi^2 = \sum_{d=1}^{9} \frac{(O_d - E_d)^2}{E_d}, \qquad E_d = n \log_{10}\!\left(1 + \frac{1}{d}\right)
+$$
+
+With 9 categories and no parameters estimated from the data, there are 8 degrees of freedom. The
+critical value at the 5% level is 15.51.
+
+- $H_0$: the leading digits follow Benford's law.
+- $H_1$: they do not.
+
+A large $\chi^2$ and a small p-value reject conformity.
+
+<PythonCell label="First look at the payments">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from scipy import stats
+
+payments = pd.read_csv("payments.csv")
+
+print(payments.shape)
+print(payments.head().to_string(index=False))
+
+amounts = payments["amount"].to_numpy()
+print()
+print(f"n = {len(amounts):,}")
+print(f"range: {amounts.min():,.2f} to {amounts.max():,.2f}")
+print(f"orders of magnitude spanned: "
+      f"{np.log10(amounts.max()) - np.log10(amounts.min()):.2f}")
+print()
+print("The conditions are met: wide range, no imposed bounds, amounts")
+print("built multiplicatively from rates and quantities.")
+
+def leading_digit(values):
+    values = np.abs(np.asarray(values, dtype=float))
+    return (values / 10 ** np.floor(np.log10(values))).astype(int)
+
+digits = np.arange(1, 10)
+benford = np.log10(1 + 1 / digits)
+lead = leading_digit(amounts)
+observed_counts = np.array([(lead == d).sum() for d in digits])
+expected_counts = benford * len(amounts)
+
+table = pd.DataFrame({
+    "digit": digits,
+    "observed": observed_counts,
+    "expected": expected_counts.round(1),
+    "obs %": (observed_counts / len(amounts) * 100).round(2),
+    "exp %": (benford * 100).round(2),
+    "difference": (observed_counts - expected_counts).round(1),
+})
+print()
+print(table.to_string(index=False))`}
+</PythonCell>
+
+<PythonCell label="The chi-square test">
+{`chi2 = ((observed_counts - expected_counts) ** 2 / expected_counts).sum()
+degrees_of_freedom = 8
+p_value = stats.chi2.sf(chi2, degrees_of_freedom)
+critical = stats.chi2.ppf(0.95, degrees_of_freedom)
+
+print(f"chi-square statistic  {chi2:>10.3f}")
+print(f"degrees of freedom    {degrees_of_freedom:>10d}")
+print(f"critical value (5%)   {critical:>10.3f}")
+print(f"p-value               {p_value:>10.3e}")
+print()
+print("VERDICT:", "reject conformity" if p_value < 0.05 else "consistent with Benford")
+
+print()
+print("scipy agrees:")
+statistic, p = stats.chisquare(observed_counts, expected_counts)
+print(f"  statistic {statistic:.3f}   p {p:.3e}")
+
+print()
+print("Contribution of each digit to the statistic:")
+contribution = (observed_counts - expected_counts) ** 2 / expected_counts
+for digit, value, obs, exp in zip(digits, contribution, observed_counts, expected_counts):
+    share = value / chi2
+    bar = "#" * int(share * 60)
+    print(f"  digit {digit}: {value:>9.2f}  ({share:>5.1%})  "
+          f"obs {obs:>4} vs exp {exp:>6.1f}  {bar}")
+
+fig, ax = plt.subplots()
+ax.bar(digits - 0.2, observed_counts / len(amounts), width=0.4, label="observed")
+ax.bar(digits + 0.2, benford, width=0.4, label="Benford")
+ax.set_xticks(digits)
+ax.set_xlabel("leading digit")
+ax.set_ylabel("frequency")
+ax.set_title("Supplier payments vs. Benford's law")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+Digit 9 dominates the statistic: far more payments begin with 9 than the law predicts. That is a
+specific, localised anomaly rather than diffuse noise, which is exactly the shape worth
+investigating.
+
+<h2 id="mad">Mean absolute deviation</h2>
+
+MAD is the average absolute gap between observed and expected **proportions**:
+
+$$
+MAD = \frac{1}{9}\sum_{d=1}^{9} \left| p_d^{\text{obs}} - p_d^{\text{Benford}} \right|
+$$
+
+Crucially, **MAD does not depend on sample size**. Nigrini's conventional thresholds for
+first-digit tests:
+
+| MAD | Interpretation |
+| --- | --- |
+| 0.000 – 0.006 | Close conformity |
+| 0.006 – 0.012 | Acceptable conformity |
+| 0.012 – 0.015 | Marginal conformity |
+| above 0.015 | Nonconformity |
+
+<PythonCell label="MAD, and drilling into the anomaly">
+{`observed_proportion = observed_counts / len(amounts)
+mad = np.abs(observed_proportion - benford).mean()
+
+def classify(value):
+    if value < 0.006:
+        return "close conformity"
+    if value < 0.012:
+        return "acceptable conformity"
+    if value < 0.015:
+        return "marginal conformity"
+    return "NONCONFORMITY"
+
+print(f"MAD = {mad:.5f}  ->  {classify(mad)}")
+
+print()
+print("Now the useful part: which vendor is responsible?")
+print(f"{'vendor':<22}{'n':>6}{'MAD':>10}{'lead 9 %':>11}   verdict")
+for vendor, group in payments.groupby("vendor"):
+    values = group["amount"].to_numpy()
+    if len(values) < 50:
+        continue
+    lead_v = leading_digit(values)
+    proportions = np.array([(lead_v == d).mean() for d in digits])
+    vendor_mad = np.abs(proportions - benford).mean()
+    print(f"{vendor:<22}{len(values):>6}{vendor_mad:>10.5f}"
+          f"{proportions[8] * 100:>10.1f}%   {classify(vendor_mad)}")
+
+print()
+suspect = payments.groupby("vendor")["amount"].apply(
+    lambda values: np.abs(
+        np.array([(leading_digit(values.to_numpy()) == d).mean() for d in digits]) - benford
+    ).mean()
+).idxmax()
+print(f"Worst conformity: {suspect}")
+
+flagged = payments[payments["vendor"] == suspect]["amount"]
+print(f"  {len(flagged)} payments, "
+      f"{(leading_digit(flagged.to_numpy()) == 9).mean():.1%} beginning with 9")
+print(f"  amounts from {flagged.min():,.2f} to {flagged.max():,.2f}")
+print(f"  {(flagged.between(9000, 10000)).mean():.1%} fall between 9,000 and 10,000")
+
+fig, ax = plt.subplots()
+ax.hist(flagged[flagged < 20000], bins=60)
+ax.axvline(10000, linewidth=2)
+ax.set_xlabel("payment amount")
+ax.set_ylabel("count")
+ax.set_title(f"{suspect}: amounts cluster just below a round threshold")`}
+</PythonCell>
+
+The picture is now specific: one vendor's payments cluster just under 10,000, which is exactly the
+signature of amounts being kept below an approval threshold. That is a finding an auditor can act
+on — and it was invisible in the aggregate test, which only said "something is wrong somewhere."
+
+<h2 id="reading-the-result">Reading the result</h2>
+
+The two measures disagree systematically, and the reason matters.
+
+**Chi-square scales with $n$.** Double the sample and the statistic roughly doubles for the same
+proportional deviation. On tens of thousands of records, any tiny departure becomes "significant" —
+and real data always departs a little.
+
+**MAD does not scale with $n$.** It measures effect size, which is what an auditor actually wants:
+not "is this deviation detectable?" but "is it big enough to care about?"
+
+<PythonCell label="Why chi-square rejects everything on large samples">
+{`rng = np.random.default_rng(88)
+
+print("Data generated to conform to Benford, tested at various sample sizes:")
+print(f"{'n':>10}{'chi2':>10}{'p-value':>12}{'MAD':>10}   chi-square verdict")
+for n in [200, 1_000, 5_000, 50_000, 500_000]:
+    sample = 10 ** (rng.random(n) * 4 + 1)
+    lead_s = leading_digit(sample)
+    counts = np.array([(lead_s == d).sum() for d in digits])
+    expected = benford * n
+    statistic = ((counts - expected) ** 2 / expected).sum()
+    p = stats.chi2.sf(statistic, 8)
+    sample_mad = np.abs(counts / n - benford).mean()
+    print(f"{n:>10,}{statistic:>10.2f}{p:>12.4f}{sample_mad:>10.5f}   "
+          f"{'reject' if p < 0.05 else 'accept'}")
+
+print()
+print("MAD stays small and stable; chi-square grows with n and eventually")
+print("rejects data that is conforming for all practical purposes.")
+print()
+print("Practical rule: use MAD to judge how BIG a deviation is, chi-square")
+print("to judge whether it is DISTINGUISHABLE from noise, and always look")
+print("at which digit is responsible before drawing any conclusion.")`}
+</PythonCell>
+
+<Callout title="A failed test is a lead, not a finding" variant="pitfall">
+  <p>
+    Benford analysis identifies data worth examining. It never establishes fraud. Round-number
+    preference, approval thresholds, seasonal billing cycles, a single large contract and a dozen
+    other innocent mechanisms all produce non-conformity. The correct output of this lesson is a
+    prioritised list of accounts to look at by hand.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does MAD have fixed thresholds while chi-square does not?",
+      options: [
+        {
+          text: "MAD measures effect size and is independent of n; chi-square grows with n for the same proportional deviation.",
+          correct: true,
+          explanation:
+            "Exactly. On 500,000 records chi-square rejects nearly any real dataset, while MAD keeps reporting the same small deviation — which is the number that actually matters to an auditor.",
+        },
+        {
+          text: "MAD is a more powerful test.",
+          explanation:
+            "MAD is not a hypothesis test at all — it has no null distribution and no p-value. It is a descriptive measure of deviation, which is precisely its value here.",
+        },
+        {
+          text: "Because chi-square requires normally distributed data.",
+          explanation:
+            "The chi-square goodness-of-fit test applies to counts, not to continuous data, and makes no normality assumption about the values.",
+        },
+      ],
+    },
+    {
+      prompt: "One vendor's payments cluster just below 10,000. What does that suggest?",
+      options: [
+        {
+          text: "Amounts may be structured to stay under an approval threshold.",
+          correct: true,
+          explanation:
+            "Right — a classic and specific audit finding, and far more actionable than the aggregate test's 'something is wrong'. It still needs confirming by hand before any conclusion is drawn.",
+        },
+        {
+          text: "The vendor charges more than the others.",
+          explanation:
+            "Higher prices would shift the whole distribution upward, not pile it against one specific round number from below.",
+        },
+        {
+          text: "Nothing — clustering is expected under Benford's law.",
+          explanation:
+            "Benford predicts a smooth logarithmic spread of magnitudes. A spike immediately below a round threshold is the opposite of that.",
+        },
+      ],
+    },
+    {
+      prompt: "A chi-square test on 400,000 records returns p < 0.001. What should you do?",
+      options: [
+        {
+          text: "Check the MAD and see which digits drive the statistic — at that sample size significance is nearly guaranteed.",
+          correct: true,
+          explanation:
+            "Correct. Statistical significance and practical importance diverge sharply at large n. MAD gives the effect size, and the per-digit contributions localise the anomaly.",
+        },
+        {
+          text: "Report the data as fraudulent.",
+          explanation:
+            "The test cannot support that conclusion at any sample size. It identifies data worth examining, and several innocent mechanisms produce non-conformity.",
+        },
+        {
+          text: "Reduce the sample and re-run until p exceeds 0.05.",
+          explanation:
+            "That is deliberately discarding evidence to obtain a preferred answer. If the concern is over-sensitivity, the honest remedy is to report effect size.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="337-343" />
