@@ -1,0 +1,207 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Check the four conditions a binomial model requires.</li>
+    <li>Explain where each factor in the binomial formula comes from.</li>
+    <li>Compute exact and cumulative binomial probabilities in Python.</li>
+  </ul>
+</Callout>
+
+The binomial distribution answers one question: **in $n$ independent attempts each succeeding
+with probability $p$, how many succeed?** It is the workhorse for anything countable out of a
+fixed total — defective units in a batch, conversions out of visitors, retries that succeed.
+
+<h2 id="the-setup">Four conditions</h2>
+
+A situation is binomial only if all four of these hold:
+
+1. **A fixed number of trials, $n$.** Decided before you start, not by when you stop.
+2. **Two outcomes per trial.** Success and failure, however you choose to define them.
+3. **Constant probability $p$.** The same on every trial.
+4. **Independence.** The outcome of one trial does not affect any other.
+
+These are not pedantic. Inspecting 20 items from a batch of 25 *without replacement* violates
+condition 3, because $p$ shifts as you draw — that is a hypergeometric situation, not a binomial
+one. Counting how many attempts until the first success violates condition 1 — that is geometric.
+And correlated failures violate condition 4, which is the same trap as chapter&nbsp;2's servers in
+one rack.
+
+<Callout title="A useful rule of thumb">
+  <p>
+    Sampling without replacement is <em>approximately</em> binomial when the sample is small
+    relative to the population — a common rule is under 10%. Inspecting 20 units from a production
+    run of 50,000 is fine to treat as binomial; inspecting 20 out of 25 is not.
+  </p>
+</Callout>
+
+<h2 id="the-formula">The formula, and where it comes from</h2>
+
+The probability of exactly $k$ successes in $n$ trials is
+
+$$
+P(X = k) = \binom{n}{k}\, p^{k}\, (1-p)^{\,n-k}
+$$
+
+Every piece has a plain reading, and it is worth taking them one at a time:
+
+- $p^{k}$ — the probability that $k$ specific trials all succeed, by the multiplication rule for
+  independent events.
+- $(1-p)^{n-k}$ — the probability the other $n-k$ trials all fail.
+- $\binom{n}{k}$ — the number of *different ways* to choose which $k$ of the $n$ trials are the
+  successful ones. This is chapter&nbsp;2's combination formula, doing exactly the job it was
+  introduced for: order within the sequence does not matter, only which trials succeeded.
+
+Multiply the probability of one specific arrangement by the number of arrangements, and you have
+the probability of $k$ successes however they fall.
+
+The mean and variance are pleasingly simple:
+
+$$
+E[X] = np, \qquad \operatorname{Var}(X) = np(1-p)
+$$
+
+Twenty flips of a fair coin: expect $20 \times 0.5 = 10$ heads, with variance $5$ and standard
+deviation about $2.24$.
+
+<h2 id="shape">Mean, variance and shape</h2>
+
+The shape depends on $p$. At $p = 0.5$ the distribution is symmetric. As $p$ moves toward 0 or 1
+it becomes skewed, because the count is squeezed against a boundary. And as $n$ grows the whole
+thing approaches a normal shape — the central limit theorem again, since a binomial count is
+literally a sum of $n$ independent 0/1 trials.
+
+<PythonCell label="Shape across p and n">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+
+for ax, (n, p) in zip(axes, [(20, 0.5), (20, 0.1), (200, 0.1)]):
+    k = np.arange(0, n + 1)
+    ax.bar(k, stats.binom.pmf(k, n, p), width=0.85)
+    ax.set_title(f"n = {n}, p = {p}")
+    ax.set_xlabel("successes")
+    # Zoom to where the mass actually is.
+    mean, sd = n * p, np.sqrt(n * p * (1 - p))
+    ax.set_xlim(max(-0.5, mean - 4 * sd), mean + 4 * sd)
+
+axes[0].set_ylabel("P(X = k)")
+plt.tight_layout()
+
+for n, p in [(20, 0.5), (20, 0.1), (200, 0.1)]:
+    print(f"n={n:3d} p={p:.1f}   mean={n*p:6.1f}   sd={np.sqrt(n*p*(1-p)):5.2f}")`}
+</PythonCell>
+
+The third panel is visibly bell-shaped. That is the justification for the normal approximation to
+the binomial, which is usually considered safe when both $np \ge 10$ and $n(1-p) \ge 10$.
+
+<h2 id="in-python">Binomial questions in Python</h2>
+
+Three functions cover essentially every binomial question: `pmf` for exactly, `cdf` for at most,
+and the complement of `cdf` for at least.
+
+<PythonCell label="Exactly, at most, at least">
+{`import numpy as np
+from scipy import stats
+
+# A batch of 200 units from a process with a 3% defect rate.
+n, p = 200, 0.03
+batch = stats.binom(n, p)
+
+print(f"expected defectives: {batch.mean():.1f}  (sd {batch.std():.2f})")
+print()
+print(f"P(exactly 6 defective) = {batch.pmf(6):.4f}")
+print(f"P(at most 6)           = {batch.cdf(6):.4f}")
+print(f"P(at least 10)         = {batch.sf(9):.4f}   <- sf(9) = 1 - cdf(9)")
+print(f"P(none at all)         = {batch.pmf(0):.4f}")
+
+print()
+# Acceptance sampling: reject the batch if more than k defectives appear.
+# What threshold rejects a good batch less than 5% of the time?
+threshold = batch.ppf(0.95)
+print(f"reject above {threshold:.0f} defectives -> false-rejection rate "
+      f"{batch.sf(threshold):.4f}")
+
+print()
+# The four conditions, made concrete: with only 25 units in the population,
+# sampling 20 without replacement is hypergeometric, not binomial.
+hyper = stats.hypergeom(M=25, n=3, N=20)   # 25 units, 3 defective, sample 20
+small = stats.binom(20, 3 / 25)
+print(f"P(exactly 3 defective), hypergeometric = {hyper.pmf(3):.4f}")
+print(f"P(exactly 3 defective), binomial       = {small.pmf(3):.4f}   <- wrong model")`}
+</PythonCell>
+
+That last comparison is the point of the four conditions. The binomial answer is not slightly off;
+it is a different number, because the model does not describe the experiment.
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "You draw 20 cards from a 52-card deck without replacement and count the hearts. Is this binomial?",
+      options: [
+        {
+          text: "No — p changes as cards are removed, violating the constant-probability condition.",
+          correct: true,
+          explanation:
+            "Right. The sample is 38% of the population, far past the 10% rule of thumb, so the shift in p matters. This is a hypergeometric situation.",
+        },
+        {
+          text: "Yes — there are 20 fixed trials with two outcomes each.",
+          explanation:
+            "Two of the four conditions hold, but constant p and independence both fail once cards are not replaced. All four are required.",
+        },
+        {
+          text: "Yes, provided you shuffle between draws.",
+          explanation:
+            "Shuffling does not put the drawn cards back. It is replacement, not shuffling, that would keep p constant.",
+        },
+      ],
+    },
+    {
+      prompt: "In the binomial formula, what is the binomial coefficient C(n,k) doing?",
+      options: [
+        {
+          text: "Counting how many different arrangements of k successes among n trials exist.",
+          correct: true,
+          explanation:
+            "Exactly. p^k (1−p)^(n−k) is the probability of one specific arrangement; C(n,k) counts how many arrangements produce the same total, and order among them does not matter.",
+        },
+        {
+          text: "Normalising the probabilities so they sum to 1.",
+          explanation:
+            "The probabilities do sum to 1, but that follows from the binomial theorem rather than from C(n,k) acting as a normaliser. Its role is combinatorial: counting arrangements.",
+        },
+        {
+          text: "Correcting for the fact that trials are not truly independent.",
+          explanation:
+            "Independence is assumed, not corrected for. If it fails, the binomial model is simply the wrong model.",
+        },
+      ],
+    },
+    {
+      prompt: "For n = 200 and p = 0.03, why is the normal approximation questionable?",
+      options: [
+        {
+          text: "np = 6, below the usual threshold of 10, so the distribution is still noticeably skewed.",
+          correct: true,
+          explanation:
+            "Right. The common rule asks for both np ≥ 10 and n(1−p) ≥ 10. Here np = 6, so the count is squeezed against zero and the shape remains asymmetric.",
+        },
+        {
+          text: "n is too small — the approximation needs n above 1000.",
+          explanation:
+            "There is no fixed threshold on n alone. What matters is np and n(1−p), because those determine whether the distribution has room to look symmetric.",
+        },
+        {
+          text: "The normal approximation never applies to a discrete distribution.",
+          explanation:
+            "It routinely does — that is exactly what a continuity-corrected normal approximation is for. The question is only whether the shape is close enough.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="50-56" />

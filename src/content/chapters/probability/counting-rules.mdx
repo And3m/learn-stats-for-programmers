@@ -1,0 +1,191 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Apply the multiplication rule to sequences of choices and to independent events.</li>
+    <li>Apply the addition rule, and know when the simple form is wrong.</li>
+    <li>Correct for overlap using the general addition rule.</li>
+  </ul>
+</Callout>
+
+Counting is the unglamorous half of probability. Once you can count outcomes correctly, most
+elementary probability questions collapse into arithmetic. The two rules below cover the great
+majority of cases, and knowing which one applies comes down to a single word in the question:
+**and** or **or**.
+
+<h2 id="multiplication-rule">The multiplication rule</h2>
+
+If a process consists of a sequence of stages, and stage $i$ can happen in $n_i$ ways
+independently of the others, the whole process can happen in
+
+$$
+n_1 \times n_2 \times \cdots \times n_k
+$$
+
+ways. This is why two dice have $6 \times 6 = 36$ outcomes and why a six-character password drawn
+from 62 alphanumeric characters has $62^6 \approx 5.68 \times 10^{10}$ possibilities.
+
+The probability version follows directly. For **independent** events $A$ and $B$ — events where
+knowing one occurred tells you nothing about the other —
+
+$$
+P(A \text{ and } B) = P(A) \times P(B)
+$$
+
+Two coins both landing heads: $\tfrac{1}{2} \times \tfrac{1}{2} = \tfrac{1}{4}$. Rolling a six
+and then drawing an ace: $\tfrac{1}{6} \times \tfrac{4}{52} = \tfrac{1}{78}$.
+
+<Callout title="Independence is a claim, not a default" variant="warning">
+  <p>
+    Multiplying probabilities is only valid when the events really are independent. Two servers in
+    the same rack failing are not independent events; nor are two loans defaulting in the same
+    recession. Treating dependent events as independent systematically <em>understates</em> the
+    probability of joint bad outcomes, which is a large part of why tail risk gets underestimated
+    in practice. Chapter&nbsp;3 gives you the general rule that does not need the assumption.
+  </p>
+</Callout>
+
+<PythonCell label="Independent and dependent, side by side">
+{`import numpy as np
+
+rng = np.random.default_rng(11)
+n = 200_000
+
+# Independent: two separate fair coins.
+a = rng.random(n) < 0.5
+b = rng.random(n) < 0.5
+print(f"independent  P(A and B) = {np.mean(a & b):.4f}   P(A)*P(B) = {a.mean() * b.mean():.4f}")
+
+# Dependent: a shared latent cause makes both events more likely together.
+shared = rng.random(n) < 0.5
+c = shared | (rng.random(n) < 0.2)
+d = shared | (rng.random(n) < 0.2)
+print(f"dependent    P(C and D) = {np.mean(c & d):.4f}   P(C)*P(D) = {c.mean() * d.mean():.4f}")
+print()
+print("Multiplying understates the joint probability whenever events share a cause.")`}
+</PythonCell>
+
+<h2 id="addition-rule">The addition rule</h2>
+
+For events that cannot both happen — **mutually exclusive** events — the probability that either
+occurs is the sum:
+
+$$
+P(A \text{ or } B) = P(A) + P(B)
+$$
+
+Drawing a single card, the events "it is a king" and "it is a queen" are mutually exclusive, so
+the probability of a king or a queen is $\tfrac{4}{52} + \tfrac{4}{52} = \tfrac{8}{52}$.
+
+This extends to any number of mutually exclusive events, and it is where the requirement that all
+outcome probabilities sum to 1 comes from: the outcomes of an experiment are mutually exclusive
+and exhaustive.
+
+<h2 id="overlap">When events overlap</h2>
+
+The simple addition rule fails the moment two events can happen together, because the outcomes in
+both get counted twice. The general form subtracts the overlap:
+
+$$
+P(A \text{ or } B) = P(A) + P(B) - P(A \text{ and } B)
+$$
+
+Draw one card and ask for the probability of a king **or** a heart. There are 4 kings and 13
+hearts, but the king of hearts is in both groups. Naively adding gives $\tfrac{4}{52} +
+\tfrac{13}{52} = \tfrac{17}{52}$, which double-counts that one card. The correct answer is
+
+$$
+\frac{4}{52} + \frac{13}{52} - \frac{1}{52} = \frac{16}{52} = \frac{4}{13}
+$$
+
+The mutually exclusive case is not a different rule — it is this rule with $P(A \text{ and } B) =
+0$.
+
+<PythonCell label="Counting the deck directly">
+{`import numpy as np
+
+ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"]
+suits = ["clubs", "diamonds", "hearts", "spades"]
+
+deck = [(rank, suit) for suit in suits for rank in ranks]
+print(f"deck size: {len(deck)}")
+
+is_king = np.array([rank == "K" for rank, _ in deck])
+is_heart = np.array([suit == "hearts" for _, suit in deck])
+
+p_king = is_king.mean()
+p_heart = is_heart.mean()
+p_both = (is_king & is_heart).mean()
+
+print(f"P(king)          = {p_king:.4f}  ({is_king.sum()} cards)")
+print(f"P(heart)         = {p_heart:.4f}  ({is_heart.sum()} cards)")
+print(f"P(king and heart)= {p_both:.4f}  ({(is_king & is_heart).sum()} card)")
+print()
+print(f"naive sum        = {p_king + p_heart:.4f}   <- double counts K-hearts")
+print(f"general rule     = {p_king + p_heart - p_both:.4f}")
+print(f"counted directly = {(is_king | is_heart).mean():.4f}")`}
+</PythonCell>
+
+Notice the pattern that recurs throughout probability: when a direct calculation and a formula
+disagree, the direct calculation is usually right and the formula is usually being applied
+outside its conditions. Counting the union directly, as the last line does, is always available
+and is a good sanity check.
+
+<Callout title="A shortcut worth remembering">
+  <p>
+    Questions phrased as <em>"at least one"</em> are almost always easier from the other side.
+    The probability of at least one head in ten flips is not a sum of ten terms — it is one minus
+    the probability of no heads at all, or 1 − (1/2)<sup>10</sup> ≈ 0.999. This is the complement
+    rule, and chapter&nbsp;3 gives it a section of its own.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "A single card is drawn. What is the probability it is a face card or a spade?",
+      options: [
+        {
+          text: "22/52",
+          correct: true,
+          explanation:
+            "Correct. 12 face cards plus 13 spades is 25, but three cards (jack, queen and king of spades) are in both groups: 12 + 13 − 3 = 22.",
+        },
+        {
+          text: "25/52",
+          explanation:
+            "This adds the two counts without subtracting the overlap, double-counting the three face cards that are also spades.",
+        },
+        {
+          text: "19/52",
+          explanation:
+            "This subtracts too much — it looks like the overlap was removed from both groups rather than once. Subtract P(A and B) exactly once.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "Two servers each have a 1% chance of failing on a given day. When is P(both fail) = 0.0001 the right answer?",
+      options: [
+        {
+          text: "Only if the two failures are genuinely independent.",
+          correct: true,
+          explanation:
+            "Right. Multiplying requires independence. Servers sharing a rack, a power supply or a deployment pipeline are correlated, and the true joint probability is then higher — often much higher.",
+        },
+        {
+          text: "Always — 0.01 × 0.01 is just arithmetic.",
+          explanation:
+            "The arithmetic is fine; the modelling assumption behind it may not be. P(A and B) = P(A)P(B) is the definition of independence, not a universal law.",
+        },
+        {
+          text: "Never — joint probabilities always require the general multiplication rule.",
+          explanation:
+            "The general rule P(A and B) = P(A)P(B|A) always applies, and it reduces to the product form exactly when P(B|A) = P(B). So the product form is right whenever independence genuinely holds.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="22-23" />

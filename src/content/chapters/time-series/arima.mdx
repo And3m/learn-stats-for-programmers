@@ -1,0 +1,266 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what each of AR, I and MA contributes.</li>
+    <li>Choose orders using ACF/PACF plus an information criterion.</li>
+    <li>Check residual diagnostics before trusting a forecast.</li>
+    <li>Produce and read a forecast with intervals.</li>
+  </ul>
+</Callout>
+
+<h2 id="three-components">AR, I and MA</h2>
+
+ARIMA$(p, d, q)$ combines three ideas, and each has a plain reading.
+
+**AR($p$) — autoregression.** Today is a weighted sum of the last $p$ values:
+
+$$
+y_t = c + \phi_1 y_{t-1} + \cdots + \phi_p y_{t-p} + \varepsilon_t
+$$
+
+This is literally a regression of the series on its own past. "Traffic today is mostly like traffic
+yesterday."
+
+**I($d$) — integration.** Difference the series $d$ times before modelling, then undo it when
+forecasting. This is the previous lesson's differencing, folded into the model.
+
+**MA($q$) — moving average.** Today is a weighted sum of the last $q$ *forecast errors*:
+
+$$
+y_t = c + \varepsilon_t + \theta_1 \varepsilon_{t-1} + \cdots + \theta_q \varepsilon_{t-q}
+$$
+
+The name is unhelpful — this is not a rolling average. It says shocks have lingering effects: an
+unusual day nudges the next few days, then fades. "Yesterday's surprise partly carries over."
+
+**Seasonal ARIMA** adds the same three components at the seasonal lag, written
+$(p,d,q)(P,D,Q)_m$. For daily data with a weekly cycle, $m = 7$.
+
+<h2 id="choosing-orders">Choosing p, d and q</h2>
+
+Three sources of evidence, used together:
+
+1. **Differencing order** from the stationarity tests: $d$ and $D$ are settled first, and neither
+   should exceed 1 here.
+2. **ACF and PACF** on the differenced series, to shortlist $p$ and $q$.
+3. **An information criterion** — AIC or BIC — to choose among the shortlist. Both penalise
+   parameters; BIC penalises more heavily and so prefers smaller models.
+
+The previous lesson's diagnosis was: no meaningful structure at lags 1–6, a strong negative spike
+at lag 7. That argues for a small non-seasonal order and a seasonal MA term.
+
+<PythonCell label="Comparing candidate orders by AIC">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.arima.model import ARIMA
+import warnings
+
+warnings.filterwarnings("ignore")
+
+traffic = pd.read_csv("web-traffic.csv", parse_dates=["date"]).set_index("date")
+traffic.index.freq = "D"
+sessions = traffic["sessions"]
+
+horizon = 28
+train, test = sessions[:-horizon], sessions[-horizon:]
+
+# A small shortlist, guided by the ACF/PACF reading. Each fit takes a moment.
+candidates = [
+    ((0, 0, 0), (0, 1, 1, 7)),
+    ((1, 0, 0), (0, 1, 1, 7)),
+    ((0, 0, 1), (0, 1, 1, 7)),
+    ((1, 1, 1), (0, 1, 1, 7)),
+    ((1, 0, 1), (1, 1, 1, 7)),
+]
+
+print(f"{'order':>12}{'seasonal':>16}{'AIC':>12}{'BIC':>12}")
+results = []
+for order, seasonal in candidates:
+    fitted = ARIMA(train, order=order, seasonal_order=seasonal).fit()
+    results.append((order, seasonal, fitted))
+    print(f"{str(order):>12}{str(seasonal):>16}{fitted.aic:>12.1f}{fitted.bic:>12.1f}")
+
+best_order, best_seasonal, model = min(results, key=lambda item: item[2].aic)
+print()
+print(f"Lowest AIC: ARIMA{best_order}{best_seasonal}")`}
+</PythonCell>
+
+<Callout title="AIC compares models, not reality" variant="warning">
+  <p>
+    An information criterion ranks the candidates you gave it. It cannot tell you that the whole
+    family is wrong, and its absolute value means nothing — only differences between models fitted
+    to <em>the same data</em> are interpretable. Changing d changes the data being modelled, so AIC
+    values across different differencing orders are not comparable.
+  </p>
+</Callout>
+
+<h2 id="fitting">Fitting the model</h2>
+
+<PythonCell label="The chosen model in full">
+{`model = ARIMA(train, order=(1, 1, 1), seasonal_order=(1, 1, 1, 7)).fit()
+print(model.summary())`}
+</PythonCell>
+
+The coefficient table reads like any other: estimate, standard error, z, p-value. `ar.L1` is the
+first autoregressive coefficient, `ma.L1` the first moving-average one, and the `.S.L7` terms are
+their seasonal counterparts. `sigma2` is the estimated variance of the innovations.
+
+<h2 id="diagnostics">Diagnostics</h2>
+
+The single question that matters: **do the residuals look like white noise?** If any structure
+remains, the model has left signal on the table and the forecast intervals are too narrow.
+
+Four checks, and `plot_diagnostics` produces all of them at once:
+
+- **Residuals over time** — should be a structureless band around zero.
+- **Histogram against a normal density** — should be roughly bell-shaped.
+- **Q-Q plot** — should follow the diagonal.
+- **Correlogram** — should show no significant autocorrelation at any lag.
+
+The **Ljung-Box** test formalises the last one, testing whether the first $k$ autocorrelations are
+jointly zero. Here a **large** p-value is the good outcome.
+
+<PythonCell label="Residual diagnostics">
+{`from statsmodels.stats.diagnostic import acorr_ljungbox
+
+fig = model.plot_diagnostics(figsize=(9.5, 6.5))
+plt.tight_layout()
+
+residuals = model.resid[1:]
+
+ljung = acorr_ljungbox(residuals, lags=[7, 14, 21, 28], return_df=True)
+print("Ljung-Box (H0: no autocorrelation - a LARGE p-value is good):")
+print(ljung.round(4).to_string())
+
+print()
+print(f"residual mean {residuals.mean():>10.2f}   (should be near zero)")
+print(f"residual sd   {residuals.std():>10.2f}")
+
+from scipy import stats as scipy_stats
+_, normality_p = scipy_stats.jarque_bera(residuals)
+print(f"Jarque-Bera p {normality_p:>10.4f}   (large = residuals look normal)")`}
+</PythonCell>
+
+<h2 id="forecasting">Forecasting</h2>
+
+With diagnostics passed, forecast — always with intervals. A point forecast without an interval
+is a claim of certainty nobody possesses.
+
+<PythonCell label="Forecast, intervals, and an honest comparison">
+{`forecast = model.get_forecast(steps=horizon)
+mean_forecast = forecast.predicted_mean
+interval = forecast.conf_int(alpha=0.05)
+
+def mape(actual, predicted):
+    actual, predicted = np.asarray(actual), np.asarray(predicted)
+    return float(np.mean(np.abs((actual - predicted) / actual)) * 100)
+
+seasonal_naive = np.array([train.iloc[-7 + (i % 7)] for i in range(horizon)])
+
+print(f"{'method':<28}{'MAPE %':>9}")
+print(f"{'seasonal naive':<28}{mape(test, seasonal_naive):>9.2f}")
+print(f"{'ARIMA(1,1,1)(1,1,1,7)':<28}{mape(test, mean_forecast):>9.2f}")
+
+inside = ((test.values >= interval.iloc[:, 0].values) &
+          (test.values <= interval.iloc[:, 1].values)).mean()
+print()
+print(f"actual values inside the 95% interval: {inside:.1%}")
+
+fig, ax = plt.subplots(figsize=(9.5, 4))
+context = sessions[-(horizon + 70):]
+ax.plot(context.index, context.values, linewidth=1, label="actual")
+ax.plot(mean_forecast.index, mean_forecast.values, linewidth=2, label="ARIMA forecast")
+ax.fill_between(interval.index, interval.iloc[:, 0], interval.iloc[:, 1],
+                alpha=0.25, label="95% interval")
+ax.axvline(train.index[-1], linewidth=1)
+ax.set_title("Four-week forecast with intervals")
+ax.legend(fontsize=8)
+
+print()
+print("Interval width grows with the horizon - each step inherits the")
+print("uncertainty of every step before it:")
+widths = interval.iloc[:, 1] - interval.iloc[:, 0]
+for step in [0, 6, 13, 27]:
+    print(f"  day {step + 1:>2}: +/- {widths.iloc[step] / 2:>7,.0f} sessions")`}
+</PythonCell>
+
+<Callout title="The benchmark wins" variant="pitfall">
+  <p>
+    On this series the seasonal-naive rule is competitive with — and by MAPE slightly better than —
+    a fitted seasonal ARIMA. That is a real result, not a defect in the setup, and it is why
+    lesson&nbsp;7.1 insisted on establishing the benchmark first. A model earns its complexity by
+    beating the trivial alternative on held-out data. When it does not, the honest conclusion is to
+    ship the one-line rule.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does the MA component of ARIMA actually model?",
+      options: [
+        {
+          text: "Dependence on recent forecast errors — shocks that linger and then fade.",
+          correct: true,
+          explanation:
+            "Right, and the name is genuinely misleading: it is not a rolling average of the series. It is a weighted sum of past innovations.",
+        },
+        {
+          text: "A rolling average of the last q observations.",
+          explanation:
+            "That is what the name suggests and it is wrong. A rolling mean smooths the series; the MA term relates today to past *errors*.",
+        },
+        {
+          text: "The trend component of the series.",
+          explanation:
+            "Trend is handled by the I component, through differencing.",
+        },
+      ],
+    },
+    {
+      prompt: "A Ljung-Box test on the residuals returns p = 0.002. What does that tell you?",
+      options: [
+        {
+          text: "Autocorrelation remains in the residuals — the model has missed structure and its intervals are too narrow.",
+          correct: true,
+          explanation:
+            "Correct. The null is 'no autocorrelation', so a small p-value rejects it. Left-over structure means both a worse forecast and understated uncertainty.",
+        },
+        {
+          text: "The residuals are white noise, as required.",
+          explanation:
+            "That would be a *large* p-value. Small means the null of no autocorrelation is rejected.",
+        },
+        {
+          text: "The model fits significantly better than a naive one.",
+          explanation:
+            "Ljung-Box says nothing about comparative accuracy — it only examines whether residual autocorrelation remains.",
+        },
+      ],
+    },
+    {
+      prompt: "A fitted ARIMA does not beat the seasonal-naive benchmark on held-out data. What follows?",
+      options: [
+        {
+          text: "Ship the benchmark — the model has not earned its complexity on this series.",
+          correct: true,
+          explanation:
+            "Exactly. The extra complexity has to pay for itself in out-of-sample accuracy. It is worth trying other specifications first, but the benchmark stays the thing to beat.",
+        },
+        {
+          text: "Increase p and q until the ARIMA wins.",
+          explanation:
+            "Adding parameters until a model beats a benchmark on one test window is overfitting to the test set. The improvement would not survive on genuinely new data.",
+        },
+        {
+          text: "The test set must be too short to be meaningful.",
+          explanation:
+            "A longer or rolling-origin evaluation is a reasonable thing to check. But it should be motivated by wanting a reliable estimate, not by disliking the answer.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="191-215" />

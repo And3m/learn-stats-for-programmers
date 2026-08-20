@@ -1,0 +1,227 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Describe how a decision tree chooses each split.</li>
+    <li>Compute Gini impurity and entropy, and say how they differ.</li>
+    <li>Calculate information gain for a candidate split.</li>
+  </ul>
+</Callout>
+
+A decision tree is a sequence of yes/no questions ending in a prediction. What makes it appealing
+is that the whole model is legible: you can print it, follow any prediction back through the
+questions that produced it, and explain it to someone who has never heard of a model.
+
+What makes it dangerous is how easily it memorises. This lesson covers the mechanism; lesson 6.3
+covers the memorisation.
+
+<h2 id="the-idea">Twenty questions, chosen greedily</h2>
+
+Training a tree is a recursive procedure:
+
+1. Consider every predictor, and every possible split point within it.
+2. Score each candidate split by how much **purer** it makes the resulting groups.
+3. Take the best one. Split the data.
+4. Repeat on each side, independently, until a stopping rule fires.
+
+"Pure" means containing mostly one class. A split that separates 90 of one class from 90 of the
+other is excellent; a split leaving both sides half-and-half has achieved nothing.
+
+Two properties of this procedure matter enormously.
+
+It is **greedy**: it takes the best split available right now, never looking ahead. A pair of
+splits that together would be superb but individually look mediocre will never be found. Trees are
+therefore not optimal, and finding the optimal tree is computationally intractable.
+
+It is **axis-aligned**: each split tests one feature against one threshold, so decision boundaries
+are always rectangles. A diagonal boundary must be approximated by a staircase, which takes many
+splits to do badly.
+
+<h2 id="gini-and-entropy">Gini and entropy</h2>
+
+Two measures of impurity are in common use. For a node where class $i$ has proportion $p_i$:
+
+$$
+\text{Gini} = 1 - \sum_i p_i^2
+\qquad
+\text{Entropy} = -\sum_i p_i \log_2 p_i
+$$
+
+Both are zero for a pure node and maximal for an even split. For two classes, Gini peaks at 0.5
+and entropy at 1.0 bit.
+
+They rarely disagree about which split is best. Gini is scikit-learn's default because it avoids
+computing logarithms; entropy has the cleaner information-theoretic reading — it is the average
+number of bits needed to encode the class of a randomly chosen member of the node.
+
+<PythonCell label="Impurity across the range">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+def gini(p):
+    return 1 - (p ** 2 + (1 - p) ** 2)
+
+def entropy(p):
+    p = np.clip(p, 1e-12, 1 - 1e-12)
+    return -(p * np.log2(p) + (1 - p) * np.log2(1 - p))
+
+p = np.linspace(0, 1, 400)
+
+fig, ax = plt.subplots()
+ax.plot(p, gini(p), linewidth=2, label="Gini")
+ax.plot(p, entropy(p), linewidth=2, label="Entropy (bits)")
+ax.plot(p, np.minimum(p, 1 - p), linewidth=2, label="Misclassification rate")
+ax.set_xlabel("proportion of class 1 in the node")
+ax.set_ylabel("impurity")
+ax.set_title("All zero at the extremes, maximal at 50/50")
+ax.legend()
+
+print(f"{'p':>6}{'Gini':>9}{'Entropy':>10}{'Misclass':>10}")
+for value in [0.0, 0.1, 0.25, 0.5, 0.75, 0.9, 1.0]:
+    print(f"{value:>6.2f}{gini(value):>9.4f}{entropy(value):>10.4f}{min(value, 1 - value):>10.4f}")
+
+print()
+print("Misclassification rate is piecewise linear, which makes it a poor")
+print("splitting criterion: it often cannot distinguish between two splits")
+print("that Gini and entropy correctly rank differently.")`}
+</PythonCell>
+
+<h2 id="information-gain">Information gain</h2>
+
+A split is scored by how much impurity it removes, weighted by how much data ends up on each side:
+
+$$
+\text{gain} = I(\text{parent}) - \left(\frac{n_L}{n} I(\text{left}) + \frac{n_R}{n} I(\text{right})\right)
+$$
+
+The weighting is essential. A split that peels off three perfectly pure observations and leaves
+the other 897 untouched has removed almost no impurity overall, and the weighting says so.
+
+The tree evaluates this for every feature at every threshold and takes the maximum. That is the
+entire algorithm.
+
+<PythonCell label="Scoring every candidate split by hand">
+{`import numpy as np
+
+rng = np.random.default_rng(8)
+
+# Two classes separated mainly by one of two features.
+n = 400
+signal = np.concatenate([rng.normal(4.0, 1.1, n // 2), rng.normal(7.0, 1.1, n // 2)])
+noise = rng.normal(5.0, 1.5, n)
+label = np.concatenate([np.zeros(n // 2, dtype=int), np.ones(n // 2, dtype=int)])
+
+def gini_impurity(y):
+    if len(y) == 0:
+        return 0.0
+    p = y.mean()
+    return 1 - (p ** 2 + (1 - p) ** 2)
+
+def best_split(x, y):
+    parent = gini_impurity(y)
+    best = (None, -1.0)
+    for threshold in np.quantile(x, np.linspace(0.02, 0.98, 97)):
+        left, right = y[x <= threshold], y[x > threshold]
+        if len(left) == 0 or len(right) == 0:
+            continue
+        weighted = (len(left) * gini_impurity(left) + len(right) * gini_impurity(right)) / len(y)
+        gain = parent - weighted
+        if gain > best[1]:
+            best = (threshold, gain)
+    return best
+
+print(f"parent Gini impurity: {gini_impurity(label):.4f}  (a perfect 50/50 split)")
+print()
+for name, feature in [("signal", signal), ("noise", noise)]:
+    threshold, gain = best_split(feature, label)
+    print(f"{name:>7}: best threshold {threshold:6.3f}   information gain {gain:.4f}")
+
+print()
+print("The tree picks 'signal' - it removes far more impurity.")
+
+threshold, _ = best_split(signal, label)
+left, right = label[signal <= threshold], label[signal > threshold]
+print()
+print(f"After splitting signal at {threshold:.3f}:")
+print(f"  left  {len(left):3d} rows, {left.mean():.1%} class 1, Gini {gini_impurity(left):.4f}")
+print(f"  right {len(right):3d} rows, {right.mean():.1%} class 1, Gini {gini_impurity(right):.4f}")`}
+</PythonCell>
+
+<Callout title="Why trees struggle with diagonal boundaries" variant="warning">
+  <p>
+    Because every split is <em>one feature vs. one threshold</em>, the decision boundary is always
+    made of axis-parallel rectangles. If the true boundary is the line{" "}
+    <code>x + y = 5</code>, a tree approximates it with a staircase and needs many splits to get a
+    mediocre fit — while a logistic regression with both features handles it in one step. When you
+    see a tree with surprising depth on simple-looking data, this is often why.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why is tree building described as greedy?",
+      options: [
+        {
+          text: "Each split is chosen to be locally best, with no look-ahead to what splits it enables later.",
+          correct: true,
+          explanation:
+            "Right, and the consequence is that trees are not optimal. Finding the globally optimal tree is NP-hard, so greedy construction is a deliberate and universal compromise.",
+        },
+        {
+          text: "Because it uses as much training data as possible at every node.",
+          explanation:
+            "All the data reaching a node is used, but that is not what 'greedy' refers to. Greedy describes the search strategy: best now, never reconsidered.",
+        },
+        {
+          text: "Because it prefers features with more distinct values.",
+          explanation:
+            "There is a real bias toward high-cardinality features in impurity-based splitting, but it is a separate phenomenon from greediness.",
+        },
+      ],
+    },
+    {
+      prompt: "A node contains 90% class A. What is its Gini impurity?",
+      options: [
+        {
+          text: "1 − (0.9² + 0.1²) = 0.18",
+          correct: true,
+          explanation:
+            "Correct. Gini runs from 0 for a pure node to 0.5 for an even two-class split, so 0.18 is quite pure.",
+        },
+        {
+          text: "0.9, the proportion of the majority class.",
+          explanation:
+            "That is purity, not impurity, and it is not how Gini is defined. Gini sums squared proportions and subtracts from one.",
+        },
+        {
+          text: "0.1, the misclassification rate.",
+          explanation:
+            "0.1 is indeed the misclassification rate, which is a different (and generally worse) splitting criterion because it is piecewise linear.",
+        },
+      ],
+    },
+    {
+      prompt: "Why must information gain weight the child nodes by their size?",
+      options: [
+        {
+          text: "Otherwise a split isolating a handful of pure observations would score as highly as one that separates the bulk of the data.",
+          correct: true,
+          explanation:
+            "Exactly. Weighting by n_L/n and n_R/n makes the score reflect how much of the dataset was actually improved, not just how pure the best child happens to be.",
+        },
+        {
+          text: "To keep information gain between 0 and 1.",
+          explanation:
+            "The bound comes from the impurity measure's own range, not from the weighting. Weighting is about fairness across split sizes.",
+        },
+        {
+          text: "To correct for class imbalance in the parent node.",
+          explanation:
+            "Class imbalance is already reflected in the parent's impurity. The weights are about the sizes of the children.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="141-142" />

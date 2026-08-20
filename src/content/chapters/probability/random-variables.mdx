@@ -1,0 +1,247 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Distinguish discrete from continuous random variables, and say why it changes the maths.</li>
+    <li>Read a probability mass function and a probability density function correctly.</li>
+    <li>Use the CDF to answer the questions people actually ask.</li>
+  </ul>
+</Callout>
+
+So far every question has been about a single event: this card, this roll, this flip. A **random
+variable** is the next abstraction — a rule that assigns a number to each outcome of an
+experiment, so that instead of asking about one event you can describe the behaviour of the whole
+thing at once.
+
+Roll two dice and let $X$ be the sum. Measure a request and let $X$ be its latency in
+milliseconds. In both cases $X$ is a random variable, and what we want is a complete description
+of how its probability is distributed across the values it can take.
+
+<h2 id="discrete-vs-continuous">Discrete vs. continuous</h2>
+
+A **discrete** random variable takes countably many values, usually integers. The sum of two dice
+(2 through 12), the number of defective units in a batch, the number of requests arriving in a
+second. You can enumerate the values and attach a probability to each.
+
+A **continuous** random variable takes any value in an interval. Latency, weight, temperature,
+time to failure. You cannot enumerate the values, and here is the consequence that surprises
+people:
+
+$$
+P(X = x) = 0 \quad \text{for every single } x
+$$
+
+The probability that a request takes *exactly* 47.0000… milliseconds is zero, because there are
+uncountably many possible values and each individual one has no width. This is not a technicality
+to be waved away — it is why continuous variables need a *density* rather than a mass, and why
+every meaningful question about them is about an interval.
+
+| | Discrete | Continuous |
+| --- | --- | --- |
+| Values | Countable | Uncountable (an interval) |
+| Described by | Probability **mass** function | Probability **density** function |
+| $P(X = x)$ | Can be positive | Always zero |
+| Total probability | Sums to 1 | Integrates to 1 |
+| Meaningful question | $P(X = 3)$ | $P(2.5 &lt; X &lt; 3.5)$ |
+
+<h2 id="pmf">Probability mass functions</h2>
+
+For a discrete variable, the probability mass function gives the probability of each value:
+
+$$
+p(x) = P(X = x), \qquad \sum_x p(x) = 1, \qquad p(x) \ge 0
+$$
+
+The sum of two dice is the standard example. It is not uniform — 7 has six ways of occurring and
+2 has one — and the triangular shape of its PMF is a direct picture of that counting.
+
+<PythonCell label="The PMF of the sum of two dice">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from collections import Counter
+
+# Every one of the 36 equally likely outcomes.
+outcomes = [(a, b) for a in range(1, 7) for b in range(1, 7)]
+counts = Counter(a + b for a, b in outcomes)
+
+values = sorted(counts)
+pmf = np.array([counts[v] / 36 for v in values])
+
+for v, p in zip(values, pmf):
+    print(f"P(X = {v:2d}) = {counts[v]}/36 = {p:.4f}  {'#' * counts[v]}")
+
+print(f"\\nsum of all probabilities = {pmf.sum():.10f}")
+
+fig, ax = plt.subplots()
+ax.bar(values, pmf, width=0.7)
+ax.set_xticks(values)
+ax.set_xlabel("sum of two dice")
+ax.set_ylabel("P(X = x)")
+ax.set_title("Probability mass function")`}
+</PythonCell>
+
+The **expected value** of a discrete variable is the probability-weighted average of its values,
+and the variance is the probability-weighted average squared deviation from that mean:
+
+$$
+E[X] = \sum_x x\,p(x)
+\qquad
+\operatorname{Var}(X) = \sum_x (x - E[X])^2 p(x)
+$$
+
+For two dice, $E[X] = 7$ — which you could have guessed from the symmetry of the picture above.
+
+<h2 id="pdf">Probability density functions</h2>
+
+For a continuous variable, the probability density function $f(x)$ does **not** give a
+probability. It gives probability *per unit of $x$*, and you get an actual probability by
+integrating over an interval:
+
+$$
+P(a \le X \le b) = \int_a^b f(x)\,dx, \qquad \int_{-\infty}^{\infty} f(x)\,dx = 1
+$$
+
+Two consequences follow, and both catch people out. First, $f(x)$ can exceed 1 — a density of 4
+is perfectly legal if it only holds over an interval of width 0.1. Second, since a single point
+has zero width, $P(X \le a)$ and $P(X &lt; a)$ are identical for continuous variables. That
+distinction matters enormously for discrete variables and not at all here.
+
+<Callout title="Density is not probability" variant="pitfall">
+  <p>
+    If you take one thing from this lesson: reading a value off a density curve does not give you
+    a probability. The <em>area under</em> the curve does. It is the reason every continuous
+    probability calculation in this course ends up calling a CDF rather than a PDF.
+  </p>
+</Callout>
+
+<h2 id="cdf">Cumulative distribution functions</h2>
+
+The cumulative distribution function works for both kinds of variable and answers the question
+people actually ask:
+
+$$
+F(x) = P(X \le x)
+$$
+
+For discrete variables it is a sum of the mass up to $x$, producing a staircase. For continuous
+variables it is the integral of the density, producing a smooth curve from 0 to 1. Either way,
+every interval question reduces to subtraction:
+
+$$
+P(a &lt; X \le b) = F(b) - F(a)
+\qquad
+P(X > a) = 1 - F(a)
+$$
+
+This is why the CDF is the workhorse. "What fraction of requests are slower than 200 ms?" is
+$1 - F(200)$. "What is the p95?" is the inverse — the $x$ where $F(x) = 0.95$, which SciPy calls
+the percent point function, `ppf`.
+
+<PythonCell label="Density, cumulative distribution, and the questions they answer">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# A right-skewed latency model: lognormal, in milliseconds.
+dist = stats.lognorm(s=0.55, scale=np.exp(3.9))
+
+x = np.linspace(0, 250, 600)
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9, 3.4))
+
+left.plot(x, dist.pdf(x))
+left.fill_between(x, dist.pdf(x), where=(x >= 100) & (x <= 150), alpha=0.35)
+left.set_title("PDF — the shaded area is a probability")
+left.set_xlabel("latency (ms)")
+left.set_ylabel("density")
+
+right.plot(x, dist.cdf(x))
+right.set_title("CDF — read probabilities off directly")
+right.set_xlabel("latency (ms)")
+right.set_ylabel("P(X <= x)")
+
+plt.tight_layout()
+
+print(f"P(100 <= X <= 150) = {dist.cdf(150) - dist.cdf(100):.4f}   <- the shaded area")
+print(f"P(X > 200)         = {1 - dist.cdf(200):.4f}")
+print()
+print(f"median (p50) = {dist.ppf(0.50):6.1f} ms")
+print(f"p95          = {dist.ppf(0.95):6.1f} ms")
+print(f"p99          = {dist.ppf(0.99):6.1f} ms")
+print(f"mean         = {dist.mean():6.1f} ms   <- above the median, because the tail is long")`}
+</PythonCell>
+
+That last pair of numbers is the practical payoff. The mean sits above the median because the
+distribution is right-skewed, and the p99 is far above both. Chapter&nbsp;3 works through the four
+distributions you will meet most often, and every one of them is used through exactly this
+interface: `pdf`, `cdf`, `ppf`.
+
+<Quiz
+  questions={[
+    {
+      prompt: "For a continuous random variable, what is P(X = 47.0)?",
+      options: [
+        {
+          text: "Zero — a single point has no width, so it carries no probability.",
+          correct: true,
+          explanation:
+            "Right. Probability for continuous variables comes from area under the density, and a single point has zero width. This is why P(X ≤ a) and P(X < a) are the same for continuous variables.",
+        },
+        {
+          text: "Whatever the density function returns at 47.0.",
+          explanation:
+            "The density at a point is probability per unit of x, not a probability. It can even exceed 1. You must integrate over an interval to get a probability.",
+        },
+        {
+          text: "It depends on the distribution.",
+          explanation:
+            "It does not — it is zero for every continuous distribution, by construction. Only discrete variables can put positive probability on a single value.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "You want the probability that latency falls between 100 and 150 ms. Which is the direct route?",
+      options: [
+        {
+          text: "F(150) − F(100), using the CDF.",
+          correct: true,
+          explanation:
+            "Correct, and it is why the CDF is the workhorse: every interval question is a subtraction of two cumulative values.",
+        },
+        {
+          text: "f(150) − f(100), using the PDF.",
+          explanation:
+            "Subtracting two densities has no probabilistic meaning at all. You need the area between them, which is what the CDF accumulates.",
+        },
+        {
+          text: "(f(100) + f(150)) / 2 × 50.",
+          explanation:
+            "This is a trapezoidal approximation to the integral — it will be roughly right for a smooth density over a narrow interval, but the CDF gives the exact answer with no approximation.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is the PMF of the sum of two dice triangular rather than flat?",
+      options: [
+        {
+          text: "Because middle sums have more underlying outcomes that produce them.",
+          correct: true,
+          explanation:
+            "Exactly. There is one way to roll a 2 and six ways to roll a 7. The 36 underlying outcomes are uniform; the sums built from them are not.",
+        },
+        {
+          text: "Because dice are biased toward the middle faces.",
+          explanation:
+            "Fair dice are uniform over their six faces. The triangular shape comes entirely from how many face-pairs map to each sum.",
+        },
+        {
+          text: "Because of the central limit theorem.",
+          explanation:
+            "The central limit theorem does explain why sums of many variables approach a normal shape — and two dice is a hint of that. But the exact triangular shape here comes from direct counting, not a limit theorem.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="30-40" />

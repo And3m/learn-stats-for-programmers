@@ -1,0 +1,54 @@
+# ---------------------------------------------------------------------------
+# Source material — copyrighted Manning book, used as syllabus only.
+# NEVER commit this file, and never copy it into public/.
+# ---------------------------------------------------------------------------
+*.pdf
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/releases
+!.yarn/plugins
+!.yarn/versions
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+/build
+.next
+next-env.d.ts
+
+# misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env
+.env*.local
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+
+# editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# pyodide cache used by scripts/verify-python.mjs
+/.pyodide-cache/

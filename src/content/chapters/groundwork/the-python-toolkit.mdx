@@ -1,0 +1,166 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Name the six libraries this course leans on and say what each is genuinely for.</li>
+    <li>Choose between NumPy, pandas, SciPy, statsmodels and scikit-learn for a given task.</li>
+    <li>Run and edit Python directly in this page.</li>
+  </ul>
+</Callout>
+
+Python did not win scientific computing because the language is elegant. It won because a small
+number of libraries agreed on a common representation — the N-dimensional array — and then built
+outward from it without duplicating each other.
+
+Understanding the division of labour between those libraries saves a surprising amount of time,
+because a task that feels awkward is usually a task you have handed to the wrong one.
+
+<h2 id="the-libraries">The six libraries</h2>
+
+**NumPy** is the foundation. It provides the `ndarray`: a contiguous, typed, fixed-shape block of
+numbers, plus vectorised operations over it that run in compiled code rather than a Python loop.
+Everything else in this list either consumes NumPy arrays or produces them. If you find yourself
+writing `for i in range(len(data))` over numeric data, NumPy almost certainly has a one-line
+replacement that is both shorter and roughly a hundred times faster.
+
+**pandas** adds labels. A `DataFrame` is a table with named columns, a meaningful index, and
+mixed types — so it handles the things real data has that a raw array does not: dates, categories,
+missing values, and the need to group by something. Use pandas for loading, cleaning, joining and
+grouping; drop to NumPy for the numeric core of a computation.
+
+**SciPy** is the algorithm library: probability distributions (`scipy.stats`), optimisation
+(`scipy.optimize`), integration, interpolation, linear algebra, signal processing. When you need
+a normal CDF, a chi-square test, or a linear program solved, this is where it lives.
+
+**statsmodels** is for *statistical* modelling in the classical sense. It fits a model and then
+hands you a summary table: coefficients, standard errors, p-values, confidence intervals,
+diagnostic tests. It is built for the question "what does this tell me about the world?"
+
+**scikit-learn** is for *predictive* modelling. Same models sometimes, different priorities: a
+uniform `fit`/`predict` interface, cross-validation, pipelines, and metrics. It is built for the
+question "how well will this do on data it has not seen?" It will not give you a p-value, and
+that is deliberate.
+
+**Matplotlib** draws things. Every figure in this course is produced by it, running in your
+browser.
+
+<Callout title="statsmodels or scikit-learn?">
+  <p>
+    Both fit a linear regression. Reach for <strong>statsmodels</strong> when you want to
+    interpret the model — which variables matter, how confident are you, do the assumptions hold.
+    Reach for <strong>scikit-learn</strong> when you want to deploy it — split the data, tune it,
+    measure out-of-sample error. Chapter 4 uses statsmodels; chapter 6 uses scikit-learn. That is
+    not an accident.
+  </p>
+</Callout>
+
+<h2 id="which-tool-when">Which tool for which job</h2>
+
+| Task | Reach for |
+| --- | --- |
+| Vectorised arithmetic, random number generation, linear algebra | NumPy |
+| Load a CSV, handle missing values, group and aggregate | pandas |
+| Probability distributions, hypothesis tests, optimisation | SciPy |
+| Fit a model you need to *explain* | statsmodels |
+| Fit a model you need to *evaluate out of sample* | scikit-learn |
+| Any chart | Matplotlib |
+
+<h2 id="running-code-here">Running code in this page</h2>
+
+Every code block in this course is live. Click **Run** and it executes real CPython — compiled to
+WebAssembly via [Pyodide](https://pyodide.org) — inside your browser tab. There is no server, no
+account, and nothing you type is uploaded anywhere.
+
+Two consequences worth knowing about:
+
+1. The first run of a lesson downloads the interpreter and that lesson's libraries. That is a
+   genuine download, so nothing starts until you ask it to. After that it is cached by your
+   browser.
+2. Cells on a page share one interpreter, exactly like cells in a notebook. A variable defined in
+   one cell is visible in the next. **Clear variables** in the runtime bar resets that namespace
+   without re-downloading anything.
+
+Edit the code below and run it again — change the sample size, change the seed, break it on
+purpose and see what the traceback looks like.
+
+<PythonCell label="Your first cell">
+{`import numpy as np
+import pandas as pd
+
+rng = np.random.default_rng(42)
+
+# 500 simulated request latencies, in milliseconds.
+latencies = rng.lognormal(mean=3.9, sigma=0.55, size=500)
+
+summary = pd.Series(latencies).describe(percentiles=[0.5, 0.95, 0.99])
+print(summary.round(1).to_string())
+
+print()
+print(f"mean   {latencies.mean():7.1f} ms")
+print(f"median {np.median(latencies):7.1f} ms")
+print(f"p95    {np.percentile(latencies, 95):7.1f} ms")`}
+</PythonCell>
+
+Notice the gap between the mean and the median. Latency distributions are right-skewed — a few
+slow requests drag the mean well above the typical experience. That single observation is why
+almost nobody reports mean latency, and it is a preview of chapter&nbsp;2, where we look properly
+at what a distribution is.
+
+<Callout title="If a cell fails" variant="warning">
+  <p>
+    A traceback in the output panel is a normal Python traceback, and it is telling the truth: the
+    code raised. The runtime itself is fine and the next run will work. If the whole runtime
+    misbehaves, <strong>Shut down</strong> and then <strong>Start Python</strong> gives you a
+    fresh interpreter.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "You need to fit a linear regression and report which predictors are statistically significant. Which library?",
+      options: [
+        {
+          text: "statsmodels",
+          correct: true,
+          explanation:
+            "Right. statsmodels is built for interpretation and gives you coefficients with standard errors, p-values and confidence intervals in its summary table.",
+        },
+        {
+          text: "scikit-learn",
+          explanation:
+            "scikit-learn will fit the same line, but deliberately does not report p-values — its interface is oriented around out-of-sample prediction quality, not inference about coefficients.",
+        },
+        {
+          text: "NumPy",
+          explanation:
+            "You can solve the least-squares system with NumPy, and chapter 4 does exactly that to show where the numbers come from. But you would then have to compute every diagnostic yourself.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "A cell defines `rng = np.random.default_rng(42)`. Can the next cell on the same page use `rng`?",
+      options: [
+        {
+          text: "Yes — cells on a page share one interpreter, like a notebook.",
+          correct: true,
+          explanation:
+            "Correct. One warm interpreter backs the whole page, so state carries between cells. 'Clear variables' in the runtime bar resets it.",
+        },
+        {
+          text: "No — each cell runs in a fresh, isolated namespace.",
+          explanation:
+            "That would make multi-step lessons impossible to write. The interpreter and its namespace are shared across the page.",
+        },
+        {
+          text: "Only if the cells are adjacent.",
+          explanation:
+            "Position does not matter. What matters is execution order: a variable exists once the cell that defines it has been run.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="4-8" />

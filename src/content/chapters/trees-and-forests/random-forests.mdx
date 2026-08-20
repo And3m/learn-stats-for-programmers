@@ -1,0 +1,283 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explain how bagging reduces variance without increasing bias.</li>
+    <li>Say what the extra feature randomness in a random forest buys.</li>
+    <li>Read a feature-importance ranking sceptically.</li>
+    <li>Decide when a forest is the right tool and when it is not.</li>
+  </ul>
+</Callout>
+
+A single tree is unstable. Change a handful of training rows and the top split can change, and
+everything below it changes with it. That instability is a weakness — and, counter-intuitively,
+the thing that makes the ensemble work.
+
+<h2 id="bagging">Bagging</h2>
+
+**Bootstrap aggregating** is two steps:
+
+1. Draw $B$ bootstrap samples — each the same size as the training set, sampled **with
+   replacement**, so each contains roughly 63% of the unique rows with some repeated.
+2. Fit a full, unpruned tree on each, and average their predictions (or take a majority vote).
+
+The reason this works is a fact about variance. If you average $B$ independent estimates each with
+variance $\sigma^2$, the average has variance $\sigma^2/B$. Averaging reduces variance while
+leaving bias unchanged — so you deliberately use **high-variance, low-bias** base learners
+(unpruned trees), and let the averaging clean up the variance.
+
+The catch is the word *independent*. Trees grown on bootstrap samples of the same data are highly
+correlated, especially if one feature dominates: every tree splits on it first and they all make
+similar mistakes. Averaging correlated estimates helps much less.
+
+<h2 id="feature-randomness">Feature randomness</h2>
+
+This is the one idea that separates a random forest from plain bagging: **at every split,
+consider only a random subset of the features.**
+
+The default is $\sqrt{p}$ features for classification. It sounds like sabotage — deliberately
+hiding the best feature from most splits — but it forces trees to explore different structures,
+which decorrelates them, which is precisely what makes averaging effective again.
+
+Individually the trees are worse. Collectively they are much better. That trade is the whole
+insight.
+
+<PythonCell label="Single tree, bagging, and a forest">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split, cross_val_score, StratifiedKFold
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.ensemble import BaggingClassifier, RandomForestClassifier
+from sklearn.metrics import accuracy_score, roc_auc_score
+
+grains = pd.read_csv("seed-grains.csv")
+X = grains.drop(columns=["variety"])
+y = (grains["variety"] == "besni").astype(int)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=7, stratify=y
+)
+
+models = {
+    "single tree (unpruned)": DecisionTreeClassifier(random_state=7),
+    "single tree (depth 3)":  DecisionTreeClassifier(max_depth=3, random_state=7),
+    "bagging (300 trees)":    BaggingClassifier(
+        DecisionTreeClassifier(random_state=7), n_estimators=300, random_state=7
+    ),
+    "random forest (300)":    RandomForestClassifier(n_estimators=300, random_state=7),
+}
+
+print(f"{'model':<24}{'train':>9}{'test':>9}{'AUC':>9}")
+fitted = {}
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    fitted[name] = model
+    scores = model.predict_proba(X_test)[:, 1]
+    print(f"{name:<24}"
+          f"{accuracy_score(y_train, model.predict(X_train)):>9.4f}"
+          f"{accuracy_score(y_test, model.predict(X_test)):>9.4f}"
+          f"{roc_auc_score(y_test, scores):>9.4f}")
+
+print()
+print("All the ensembles reach 1.00 on training data - like the single unpruned")
+print("tree. The difference is what happens on data they have not seen.")`}
+</PythonCell>
+
+<Callout title="A forest is not automatically better" variant="warning">
+  <p>
+    On this dataset the forest lands close to a well-tuned shallow tree, and clearly ahead of the
+    unpruned one. That is the honest picture: ensembles reliably rescue you from a high-variance
+    single tree, but when the signal is genuinely simple, a constrained tree can match them — and
+    it can be read, which a forest of 300 trees cannot.
+  </p>
+</Callout>
+
+<PythonCell label="Why more trees help, and where it stops">
+{`sizes = [1, 2, 5, 10, 25, 50, 100, 200, 400]
+accuracies = []
+
+for size in sizes:
+    forest = RandomForestClassifier(n_estimators=size, random_state=7).fit(X_train, y_train)
+    accuracies.append(accuracy_score(y_test, forest.predict(X_test)))
+
+print(f"{'trees':>7}{'test accuracy':>15}")
+for size, score in zip(sizes, accuracies):
+    print(f"{size:>7}{score:>15.4f}")
+
+fig, ax = plt.subplots()
+ax.plot(sizes, accuracies, marker="o", linewidth=2)
+ax.set_xscale("log")
+ax.set_xlabel("number of trees")
+ax.set_ylabel("test accuracy")
+ax.set_title("Variance reduction saturates")
+
+print()
+print("More trees never hurt accuracy - unlike depth, n_estimators is not a")
+print("complexity knob you can turn too far. It only costs compute.")
+
+# Out-of-bag scoring: each row is scored by the ~37% of trees that never saw it,
+# giving a validation estimate with no separate holdout.
+oob = RandomForestClassifier(n_estimators=400, oob_score=True, random_state=7)
+oob.fit(X_train, y_train)
+print()
+print(f"out-of-bag score {oob.oob_score_:.4f}   test accuracy {accuracy_score(y_test, oob.predict(X_test)):.4f}")`}
+</PythonCell>
+
+Out-of-bag scoring is a genuinely nice property of bagged ensembles. Because each bootstrap sample
+omits about 37% of the rows, every row can be scored by the trees that never saw it — a
+validation estimate for free, without a separate holdout.
+
+<h2 id="feature-importance">Feature importance, and its caveats</h2>
+
+A forest can report how much each feature contributed, and this is one of the main reasons people
+reach for them. It is also routinely over-read.
+
+The default measure is **mean decrease in impurity**: total impurity removed by splits on that
+feature, averaged over trees. It has two well-documented biases.
+
+- It **favours high-cardinality features** — continuous variables and categoricals with many
+  levels offer more candidate split points, so they win more often by chance.
+- It **splits credit arbitrarily among correlated features**. If two features carry the same
+  information, the forest uses whichever it happened to see, and each ends up looking half as
+  important as the information really is.
+
+**Permutation importance** avoids both. Shuffle one column in the *test* set, measure how much
+performance drops, and repeat. It measures what the model actually relies on, computed on held-out
+data.
+
+<PythonCell label="Two importance measures, compared">
+{`from sklearn.inspection import permutation_importance
+
+forest = fitted["random forest (300)"]
+
+impurity = pd.Series(forest.feature_importances_, index=X.columns)
+
+result = permutation_importance(
+    forest, X_test, y_test, n_repeats=15, random_state=7, scoring="accuracy"
+)
+permutation = pd.Series(result.importances_mean, index=X.columns)
+
+comparison = pd.DataFrame({
+    "impurity": impurity,
+    "permutation": permutation,
+    "perm_sd": result.importances_std,
+}).sort_values("permutation", ascending=False)
+
+print(comparison.round(4).to_string())
+
+print()
+print("Correlations among the features - note how much they share:")
+print(X.corr().round(2).to_string())
+
+fig, ax = plt.subplots()
+order = comparison.index[::-1]
+positions = np.arange(len(order))
+ax.barh(positions - 0.2, comparison.loc[order, "impurity"], height=0.4, label="impurity")
+ax.barh(positions + 0.2, comparison.loc[order, "permutation"], height=0.4, label="permutation")
+ax.set_yticks(positions)
+ax.set_yticklabels(order)
+ax.set_xlabel("importance")
+ax.set_title("Two measures disagree when features are correlated")
+ax.legend()`}
+</PythonCell>
+
+The features here are heavily correlated — area, perimeter, convex area and the axis lengths all
+measure aspects of the same physical size. The two importance measures disagree, and the
+disagreement is informative: it tells you that no individual ranking is trustworthy, because the
+underlying information is shared.
+
+<Callout title="Importance is not causation, and not even effect size" variant="pitfall">
+  <p>
+    A high importance means the model leaned on that feature. It does not mean the feature causes
+    the outcome, nor that intervening on it would change anything, nor that it is irreplaceable —
+    drop it and a correlated feature will often absorb the work with almost no loss. Treat
+    importance as a description of the model, not of the world.
+  </p>
+</Callout>
+
+<h2 id="when-to-use">When to reach for a forest</h2>
+
+**Reach for one when** you need strong tabular predictive performance with minimal tuning; the
+relationships are non-linear or full of interactions; features are on wildly different scales
+(trees do not care); or you want a solid baseline quickly.
+
+**Reach for something else when** you must explain individual decisions to a regulator or a
+customer — a single shallow tree or a logistic regression is auditable in a way an ensemble is
+not; you need calibrated probabilities without extra work; the relationship is genuinely linear,
+where regression will be both better and simpler; or you need to extrapolate beyond the training
+range, which trees fundamentally cannot do — every prediction is an average of training values
+that were actually observed.
+
+That last limitation is worth emphasising. Ask a forest trained on grains of 20,000–140,000 units
+of area about a grain of 400,000, and it will return the average of its most extreme leaf. It
+cannot say "bigger than anything I have seen." A linear model can.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does a random forest restrict each split to a random subset of features?",
+      options: [
+        {
+          text: "To decorrelate the trees, since averaging correlated estimates reduces variance far less.",
+          correct: true,
+          explanation:
+            "Exactly. Individually the trees get worse; collectively they get much better, because the variance reduction from averaging depends on the errors being less correlated.",
+        },
+        {
+          text: "To speed up training by evaluating fewer candidate splits.",
+          explanation:
+            "It is faster as a side effect, but that is not the motivation — plain bagging is already parallelisable, and the accuracy gain is what justifies the feature subsampling.",
+        },
+        {
+          text: "To prevent any single tree from overfitting.",
+          explanation:
+            "The individual trees are typically grown unpruned and do overfit. The ensemble handles it through averaging rather than by constraining each member.",
+        },
+      ],
+    },
+    {
+      prompt: "Two features are almost perfectly correlated. What does impurity-based importance do?",
+      options: [
+        {
+          text: "Splits the credit between them, making each look about half as important as the information really is.",
+          correct: true,
+          explanation:
+            "Right, and it is one of two known biases — the other being a preference for high-cardinality features. Permutation importance on held-out data is the more trustworthy measure.",
+        },
+        {
+          text: "Assigns both the full importance, since both are equally predictive.",
+          explanation:
+            "Importance is computed from splits actually taken. Each split uses one feature, so the total is divided between them rather than duplicated.",
+        },
+        {
+          text: "Assigns zero to both, since neither adds information over the other.",
+          explanation:
+            "Both will be used across the forest and both will accumulate importance. The problem is dilution, not elimination.",
+        },
+      ],
+    },
+    {
+      prompt: "Why can a random forest not extrapolate beyond its training range?",
+      options: [
+        {
+          text: "Every prediction is an average of training values in a leaf, so it can never exceed the range it observed.",
+          correct: true,
+          explanation:
+            "Correct, and it is a structural limit rather than a tuning problem. A linear model extends its trend; a tree returns the closest thing it has seen.",
+        },
+        {
+          text: "Because the bootstrap sampling excludes extreme values.",
+          explanation:
+            "Bootstrapping omits about 37% of rows per tree, but across hundreds of trees the extremes are well represented. The limit is how leaves make predictions.",
+        },
+        {
+          text: "It can, provided enough trees are used.",
+          explanation:
+            "Adding trees averages over more leaves, all of which are bounded by observed values. More trees cannot produce a prediction outside that range.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="174-183" />

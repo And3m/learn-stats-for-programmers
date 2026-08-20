@@ -1,0 +1,214 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Use the discrete uniform distribution and know where it genuinely applies.</li>
+    <li>Model counts of rare events in a fixed window with a Poisson distribution.</li>
+    <li>Test whether Poisson is the right model, rather than assuming it.</li>
+  </ul>
+</Callout>
+
+<h2 id="discrete-uniform">The discrete uniform distribution</h2>
+
+The simplest distribution there is: $k$ outcomes, each equally likely.
+
+$$
+P(X = x) = \frac{1}{k}
+$$
+
+A fair die, a fair coin, a correctly implemented random selection from a list. For values
+$1$ through $k$ the mean and variance are
+
+$$
+E[X] = \frac{k+1}{2}, \qquad \operatorname{Var}(X) = \frac{k^2 - 1}{12}
+$$
+
+Its real importance is as a **null model**. Uniformity is what you compare against when asking
+whether something is suspiciously non-random: a load balancer that should spread requests evenly,
+a hash function that should fill buckets evenly, a lottery that should favour no number. And it is
+the explicit contrast in chapter&nbsp;12, where the whole point of Benford's law is that naturally
+occurring leading digits are emphatically *not* uniform.
+
+<Callout title="Uniform is not the same as random" variant="warning">
+  <p>
+    These get conflated constantly. <strong>Uniform</strong> means every outcome is equally
+    likely. <strong>Random</strong> means the outcome is not determined in advance. A biased coin
+    is random but not uniform. Chapter&nbsp;12 leans on this distinction: real-world numbers are
+    random in origin yet their leading digits are strongly non-uniform, and expecting uniformity
+    is what makes Benford's law feel surprising.
+  </p>
+</Callout>
+
+<h2 id="poisson">The Poisson distribution</h2>
+
+Poisson models **counts of events in a fixed interval** when those events are rare, independent,
+and occur at a constant average rate. Support requests per hour, defects per square metre,
+arrivals per minute, packet losses per million.
+
+It has a single parameter, $\lambda$ — the mean number of events per interval:
+
+$$
+P(X = k) = \frac{\lambda^{k} e^{-\lambda}}{k!}
+$$
+
+Its defining oddity is that the mean and the variance are **the same number**:
+
+$$
+E[X] = \lambda, \qquad \operatorname{Var}(X) = \lambda
+$$
+
+That single fact is the most useful diagnostic in the whole lesson, and we return to it below.
+
+Poisson also arises as a limit of the binomial: as $n$ grows and $p$ shrinks with $np = \lambda$
+held fixed, the binomial converges to Poisson. That is why it works for "many opportunities, each
+very unlikely" — which is exactly what "a rare event in a continuous window" means.
+
+<PythonCell label="Poisson, and its binomial origins">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+lam = 4.0                      # average support tickets per hour
+tickets = stats.poisson(lam)
+
+k = np.arange(0, 15)
+print("k   P(X = k)   P(X <= k)")
+for value in range(0, 11):
+    print(f"{value:2d}   {tickets.pmf(value):8.4f}   {tickets.cdf(value):8.4f}")
+
+print()
+print(f"P(no tickets in an hour) = {tickets.pmf(0):.4f}")
+print(f"P(more than 8)           = {tickets.sf(8):.4f}")
+print(f"mean = {tickets.mean():.2f}   variance = {tickets.var():.2f}   <- equal, by construction")
+
+# Poisson as the limit of the binomial with n large, p small, np = lam.
+fig, ax = plt.subplots()
+ax.bar(k - 0.2, stats.binom.pmf(k, 400, lam / 400), width=0.4, label="binomial n=400, p=0.01")
+ax.bar(k + 0.2, tickets.pmf(k), width=0.4, label="Poisson lambda=4")
+ax.set_xlabel("events")
+ax.set_ylabel("probability")
+ax.set_title("Poisson is the rare-event limit of the binomial")
+ax.legend()`}
+</PythonCell>
+
+<h2 id="when-poisson-applies">When Poisson genuinely applies</h2>
+
+The three conditions are: events occur **independently**, at a **constant average rate**, and two
+events cannot occur at exactly the same instant.
+
+Real count data frequently violates the first two, and there is a name for what happens when it
+does. If events cluster — one outage triggering three follow-up tickets, one bad batch producing
+a run of defects — then the variance exceeds the mean. This is **overdispersion**, and it is the
+single most common reason a Poisson model misleads.
+
+The diagnostic is direct: compute the **index of dispersion**, $\operatorname{Var}(X) / E[X]$. It
+should be near 1. Meaningfully above 1 means clustering; meaningfully below 1 means the events are
+more evenly spaced than chance would produce, which usually indicates some regulating mechanism.
+
+<PythonCell label="Testing whether Poisson fits">
+{`import numpy as np
+from scipy import stats
+
+rng = np.random.default_rng(3)
+
+# Genuinely Poisson: independent arrivals at a constant rate.
+clean = rng.poisson(4.0, size=5_000)
+
+# Overdispersed: the rate itself varies hour to hour (a mixture).
+varying_rate = rng.gamma(shape=2.0, scale=2.0, size=5_000)
+clustered = rng.poisson(varying_rate)
+
+for name, sample in [("well-behaved", clean), ("overdispersed", clustered)]:
+    mean, var = sample.mean(), sample.var(ddof=1)
+    print(f"{name:>14}: mean {mean:5.2f}  variance {var:5.2f}  "
+          f"index of dispersion {var / mean:5.2f}")
+
+print()
+# A chi-square goodness-of-fit test against the fitted Poisson.
+for name, sample in [("well-behaved", clean), ("overdispersed", clustered)]:
+    lam_hat = sample.mean()
+    top = 12
+    observed = np.array([(sample == k).sum() for k in range(top)] + [(sample >= top).sum()])
+    expected = np.append(
+        stats.poisson.pmf(np.arange(top), lam_hat), stats.poisson.sf(top - 1, lam_hat)
+    ) * len(sample)
+    # One degree of freedom is spent estimating lambda.
+    chi2 = ((observed - expected) ** 2 / expected).sum()
+    p_value = stats.chi2.sf(chi2, df=len(observed) - 1 - 1)
+    verdict = "consistent with Poisson" if p_value > 0.05 else "NOT Poisson"
+    print(f"{name:>14}: chi2 {chi2:8.2f}   p {p_value:.2e}   {verdict}")`}
+</PythonCell>
+
+The second sample was built from a Poisson process whose rate itself fluctuates — a completely
+realistic situation — and the test rejects it decisively. The lesson is not that Poisson is
+fragile; it is that the index of dispersion costs one line and tells you whether you are entitled
+to use it.
+
+<Quiz
+  questions={[
+    {
+      prompt: "A count dataset has mean 7.0 and variance 21.0. What does that suggest?",
+      options: [
+        {
+          text: "Overdispersion — events are clustering, so a plain Poisson model will understate the tail.",
+          correct: true,
+          explanation:
+            "Right. The index of dispersion is 3, well above 1. Something is making events arrive together — a varying rate, or dependence between events. A negative binomial is the usual alternative.",
+        },
+        {
+          text: "A good Poisson fit — mean and variance are both positive and of similar magnitude.",
+          explanation:
+            "Poisson requires mean and variance to be equal, not merely both positive. A ratio of 3 is a strong signal against it.",
+        },
+        {
+          text: "The data must be binomial instead.",
+          explanation:
+            "Binomial variance is np(1−p), which is always *less* than its mean np. Underdispersion would hint at binomial; overdispersion points the other way.",
+        },
+      ],
+    },
+    {
+      prompt: "Which of these is genuinely uniform rather than merely random?",
+      options: [
+        {
+          text: "The face shown by a fair six-sided die.",
+          correct: true,
+          explanation:
+            "Correct — six outcomes, each with probability 1/6. Uniform means equally likely; random only means undetermined in advance.",
+        },
+        {
+          text: "The leading digit of a randomly chosen invoice amount.",
+          explanation:
+            "Random in origin, but strongly non-uniform: 1 appears about 30% of the time and 9 about 5%. That is Benford's law, and chapter 12 is built on it.",
+        },
+        {
+          text: "The outcome of a coin weighted 70/30.",
+          explanation:
+            "Random, certainly, but not uniform — the two outcomes have very different probabilities.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does the Poisson distribution arise as a limit of the binomial?",
+      options: [
+        {
+          text: "With many trials each very unlikely to succeed, and np held fixed, the binomial converges to Poisson.",
+          correct: true,
+          explanation:
+            "Exactly. It is what makes Poisson the right model for a rare event in a continuous window: think of the window as an enormous number of tiny independent opportunities.",
+        },
+        {
+          text: "Because both distributions have equal mean and variance.",
+          explanation:
+            "Only Poisson has that property. The binomial's variance np(1−p) is strictly less than its mean np — though as p → 0 the two converge, which is a hint at the same limit.",
+        },
+        {
+          text: "Because both are continuous distributions.",
+          explanation:
+            "Both are discrete. They put probability on non-negative integer counts.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="56-63" />

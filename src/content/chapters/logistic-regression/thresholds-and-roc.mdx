@@ -1,0 +1,269 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explain what changes — and what does not — when you move the threshold.</li>
+    <li>Read an ROC curve and say what AUC measures.</li>
+    <li>Choose an operating point from costs rather than convention.</li>
+  </ul>
+</Callout>
+
+<h2 id="moving-the-threshold">Moving the threshold</h2>
+
+The 0.5 cutoff in the previous lesson was a default, not a decision. Nothing about the model
+requires it, and on imbalanced data it is usually the wrong choice.
+
+Lowering the threshold flags more cases: recall rises, precision falls, false positives multiply.
+Raising it does the reverse. The **model does not change** — its ranking of borrowers from safest
+to riskiest is fixed the moment it is fitted. All the threshold does is decide where to cut that
+ranking.
+
+That separation is worth holding onto. Model quality is about the ranking; the threshold is a
+business decision layered on top, and it can be changed at any time without refitting anything.
+
+<PythonCell label="Sweeping the threshold">
+{`import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+loans = pd.read_csv("loan-defaults.csv")
+model = smf.logit(
+    "defaulted ~ credit_score + debt_to_income + months_employed + prior_defaults",
+    data=loans,
+).fit(disp=0)
+
+actual = loans["defaulted"].to_numpy()
+probability = model.predict(loans).to_numpy()
+
+print(f"{'threshold':>10}{'flagged':>9}{'recall':>9}{'precision':>11}{'F1':>8}{'accuracy':>10}")
+for threshold in [0.10, 0.15, 0.20, 0.25, 0.30, 0.40, 0.50, 0.60, 0.75]:
+    predicted = (probability >= threshold).astype(int)
+    tp = ((predicted == 1) & (actual == 1)).sum()
+    fp = ((predicted == 1) & (actual == 0)).sum()
+    fn = ((predicted == 0) & (actual == 1)).sum()
+    recall = tp / (tp + fn) if tp + fn else 0.0
+    precision = tp / (tp + fp) if tp + fp else 0.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    accuracy = (predicted == actual).mean()
+    print(f"{threshold:>10.2f}{predicted.sum():>9}{recall:>9.4f}"
+          f"{precision:>11.4f}{f1:>8.4f}{accuracy:>10.4f}")
+
+print()
+print("Accuracy peaks near 0.5 and recall collapses there - which is exactly")
+print("why optimising accuracy quietly optimises for doing nothing.")`}
+</PythonCell>
+
+<h2 id="roc-curve">The ROC curve</h2>
+
+The receiver operating characteristic curve plots the **true positive rate** (recall) against the
+**false positive rate** at every possible threshold:
+
+$$
+\text{TPR} = \frac{TP}{TP + FN}
+\qquad
+\text{FPR} = \frac{FP}{FP + TN}
+$$
+
+Each point on the curve is one threshold. The top-left corner is perfection — catch everything,
+flag nothing spuriously. The diagonal is random guessing.
+
+The curve is a property of the model alone. Reading it tells you what trade-offs are *available*;
+it does not tell you which to take.
+
+<h2 id="auc">What AUC summarises</h2>
+
+The area under the ROC curve compresses the whole curve into one number, and it has an
+unexpectedly concrete interpretation:
+
+> AUC is the probability that a randomly chosen positive case is ranked above a randomly chosen
+> negative case.
+
+An AUC of 0.5 is random ordering; 1.0 is perfect ordering. This is why AUC is **threshold-free** —
+it measures only the quality of the ranking, which is precisely the part of the model that the
+threshold cannot change.
+
+<PythonCell label="ROC, AUC, and the ranking interpretation">
+{`import matplotlib.pyplot as plt
+from sklearn.metrics import roc_curve, roc_auc_score, precision_recall_curve, average_precision_score
+
+fpr, tpr, thresholds = roc_curve(actual, probability)
+auc = roc_auc_score(actual, probability)
+
+precision_curve, recall_curve, _ = precision_recall_curve(actual, probability)
+average_precision = average_precision_score(actual, probability)
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.8))
+
+left.plot(fpr, tpr, linewidth=2, label=f"model (AUC = {auc:.3f})")
+left.plot([0, 1], [0, 1], linestyle="--", linewidth=1, label="random (AUC = 0.5)")
+for mark in [0.15, 0.25, 0.5]:
+    index = np.argmin(np.abs(thresholds - mark))
+    left.scatter([fpr[index]], [tpr[index]], s=45, zorder=5)
+    left.annotate(f"{mark:.2f}", (fpr[index], tpr[index]),
+                  textcoords="offset points", xytext=(6, -10), fontsize=8)
+left.set_xlabel("false positive rate")
+left.set_ylabel("true positive rate")
+left.set_title("ROC")
+left.legend(loc="lower right")
+
+right.plot(recall_curve, precision_curve, linewidth=2)
+right.axhline(actual.mean(), linestyle="--", linewidth=1)
+right.set_xlabel("recall")
+right.set_ylabel("precision")
+right.set_title(f"Precision-recall (AP = {average_precision:.3f})")
+
+plt.tight_layout()
+
+print(f"AUC              {auc:.4f}")
+print(f"average precision {average_precision:.4f}   (baseline = base rate {actual.mean():.4f})")
+
+# Verify the ranking interpretation directly.
+rng = np.random.default_rng(4)
+positives = probability[actual == 1]
+negatives = probability[actual == 0]
+draws = 200_000
+wins = (rng.choice(positives, draws) > rng.choice(negatives, draws)).mean()
+print()
+print(f"P(random default ranked above random repayer) = {wins:.4f}")
+print(f"AUC from sklearn                              = {auc:.4f}")`}
+</PythonCell>
+
+The simulation at the end confirms the interpretation empirically: draw one defaulter and one
+repayer at random, and the model ranks the defaulter higher about 79% of the time. That is what
+AUC 0.79 means, concretely.
+
+<Callout title="AUC hides the class imbalance" variant="warning">
+  <p>
+    The false positive rate has the large true-negative count in its denominator, so on heavily
+    imbalanced data a model can post an impressive AUC while its precision at any usable threshold
+    is dismal. The precision-recall curve has no such blind spot, because true negatives appear
+    nowhere in either axis. When positives are rare, quote both — or prefer average precision.
+  </p>
+</Callout>
+
+<h2 id="choosing">Choosing an operating point</h2>
+
+The right threshold follows from costs, not from convention. If a false negative costs $C_{FN}$
+and a false positive costs $C_{FP}$, expected cost at a given threshold is
+
+$$
+\text{cost} = C_{FN} \times FN + C_{FP} \times FP
+$$
+
+and you simply choose the threshold that minimises it. Where costs are unknown, a common fallback
+is Youden's J statistic — maximise $\text{TPR} - \text{FPR}$ — which implicitly assumes the two
+errors cost the same.
+
+<PythonCell label="Optimising the threshold against real costs">
+{`# Suppose a default costs 8x what a wrongly declined applicant costs.
+cost_false_negative = 8.0
+cost_false_positive = 1.0
+
+grid = np.linspace(0.02, 0.95, 200)
+costs = []
+for threshold in grid:
+    predicted = (probability >= threshold).astype(int)
+    fn = ((predicted == 0) & (actual == 1)).sum()
+    fp = ((predicted == 1) & (actual == 0)).sum()
+    costs.append(cost_false_negative * fn + cost_false_positive * fp)
+
+costs = np.array(costs)
+best = grid[costs.argmin()]
+
+youden = thresholds[np.argmax(tpr - fpr)]
+
+print(f"cost-minimising threshold (8:1)  {best:.3f}   total cost {costs.min():,.0f}")
+print(f"cost at the default 0.50          "
+      f"{costs[np.argmin(np.abs(grid - 0.5))]:,.0f}")
+print(f"Youden's J threshold (1:1)        {youden:.3f}")
+
+fig, ax = plt.subplots()
+ax.plot(grid, costs, linewidth=2)
+ax.axvline(best, linestyle="--", linewidth=1)
+ax.axvline(0.5, linestyle=":", linewidth=1)
+ax.set_xlabel("threshold")
+ax.set_ylabel("total cost")
+ax.set_title("Cost is minimised well below 0.5 when misses are expensive")
+
+predicted_best = (probability >= best).astype(int)
+tp = ((predicted_best == 1) & (actual == 1)).sum()
+fn = ((predicted_best == 0) & (actual == 1)).sum()
+fp = ((predicted_best == 1) & (actual == 0)).sum()
+print()
+print(f"at threshold {best:.3f}: recall {tp / (tp + fn):.4f}, "
+      f"precision {tp / (tp + fp):.4f}, flagged {predicted_best.sum()}")`}
+</PythonCell>
+
+The cost-minimising threshold sits far below 0.5. That is the general result whenever misses are
+more expensive than false alarms, and it is the single most valuable thing to take from this
+chapter: **the threshold is a business parameter, and leaving it at its default is a decision you
+are making by not making it.**
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does AUC = 0.79 mean, concretely?",
+      options: [
+        {
+          text: "A randomly chosen positive is ranked above a randomly chosen negative 79% of the time.",
+          correct: true,
+          explanation:
+            "Exactly — and the simulation in the lesson confirms it empirically. AUC measures ranking quality, which is why it needs no threshold.",
+        },
+        {
+          text: "The model classifies 79% of cases correctly.",
+          explanation:
+            "That is accuracy, which depends entirely on the threshold. AUC is threshold-free and measures something different.",
+        },
+        {
+          text: "79% of predicted positives are true positives.",
+          explanation:
+            "That is precision at a particular threshold. AUC summarises the whole curve rather than one operating point.",
+        },
+      ],
+    },
+    {
+      prompt: "False negatives cost eight times what false positives cost. What follows?",
+      options: [
+        {
+          text: "The optimal threshold drops well below 0.5, trading precision for recall.",
+          correct: true,
+          explanation:
+            "Right. Flag more aggressively so fewer real cases slip through, accepting more false alarms because each is cheap by comparison.",
+        },
+        {
+          text: "The threshold should rise above 0.5 to be more certain before flagging.",
+          explanation:
+            "That reduces false positives — the cheap error — while increasing false negatives, the expensive one. It moves cost in the wrong direction.",
+        },
+        {
+          text: "The model should be refitted with class weights instead.",
+          explanation:
+            "Reweighting is a legitimate alternative, but it is not necessary: the ranking is already fixed, and adjusting the threshold is the cheaper and more transparent lever.",
+        },
+      ],
+    },
+    {
+      prompt: "When is a precision-recall curve more informative than an ROC curve?",
+      options: [
+        {
+          text: "When positives are rare — ROC's false positive rate is diluted by a huge true-negative count.",
+          correct: true,
+          explanation:
+            "Correct. True negatives appear in neither PR axis, so the curve reflects performance on the class you actually care about rather than being flattered by the easy majority.",
+        },
+        {
+          text: "When the classes are perfectly balanced.",
+          explanation:
+            "With balanced classes the two curves tell broadly consistent stories. The divergence appears precisely under imbalance.",
+        },
+        {
+          text: "When the model is poorly calibrated.",
+          explanation:
+            "Both curves depend only on the ranking, not on whether the predicted probabilities are well calibrated. Calibration is a separate concern from either.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="136-139" />

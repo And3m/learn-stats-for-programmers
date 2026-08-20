@@ -1,0 +1,281 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>State precisely what a regression coefficient claims — and what it does not.</li>
+    <li>Interpret a p-value honestly, including what it is not.</li>
+    <li>Distinguish a confidence interval from a prediction interval.</li>
+    <li>Recognise when multicollinearity has made a coefficient untrustworthy.</li>
+  </ul>
+</Callout>
+
+<h2 id="coefficients">What a coefficient means</h2>
+
+Fitting the model from the previous lesson gives roughly
+
+$$
+\widehat{\text{kpl}} = 23.42 - 2.45\,\text{engine} - 0.00356\,\text{weight} + 0.0326\,\text{power}
+$$
+
+The engine coefficient says: **among vehicles of the same weight and the same power output**, one
+extra litre of displacement is associated with 2.45 fewer kilometres per litre.
+
+Three qualifications are packed into that sentence, and dropping any of them turns a defensible
+statement into a wrong one.
+
+1. **"Holding the others fixed."** This is not the effect of a bigger engine in general — bigger
+   engines come with more weight and more power, and those have their own effects. It is the
+   effect of displacement *net of* the others.
+2. **"Is associated with."** Regression measures association. Causation requires an argument
+   about how the data were generated, which no amount of fitting supplies.
+3. **The units are the data's units.** Per litre, per kilogram, per kilowatt. A coefficient of
+   $-0.00356$ on weight looks negligible until you notice that vehicles differ by hundreds of
+   kilograms: 300 kg costs about 1.07 kpl.
+
+<Callout title="The power coefficient is positive. Is that plausible?" variant="warning">
+  <p>
+    On its own, "more power improves fuel economy" is nonsense. But the coefficient is not on its
+    own — it is conditional on engine size and weight being held fixed. Among vehicles of identical
+    displacement and mass, the more powerful one is likely to be the more modern, more efficient
+    engine. Sign flips like this are normal in multiple regression and are one of the clearest
+    reminders that these are conditional statements, not marginal ones. Note also that{" "}
+    <code>power_kw</code> is correlated 0.94 with <code>engine_litres</code> — see below.
+  </p>
+</Callout>
+
+<PythonCell label="Coefficients in units people care about">
+{`import numpy as np
+import pandas as pd
+import statsmodels.formula.api as smf
+
+cars = pd.read_csv("fuel-efficiency.csv")
+model = smf.ols("city_kpl ~ engine_litres + weight_kg + power_kw", data=cars).fit()
+
+print("Per-unit effects:")
+for name in ["engine_litres", "weight_kg", "power_kw"]:
+    print(f"  {name:<14} {model.params[name]:+.5f} kpl per unit")
+
+print()
+print("Rescaled to differences people actually encounter:")
+print(f"  +1.0 litre of displacement : {model.params['engine_litres'] * 1.0:+.2f} kpl")
+print(f"  +300 kg of kerb weight     : {model.params['weight_kg'] * 300:+.2f} kpl")
+print(f"  +50 kW of power            : {model.params['power_kw'] * 50:+.2f} kpl")
+
+print()
+# Standardised coefficients put predictors on a common footing.
+z = cars.copy()
+for column in ["engine_litres", "weight_kg", "power_kw", "city_kpl"]:
+    z[column] = (z[column] - z[column].mean()) / z[column].std(ddof=1)
+standardised = smf.ols("city_kpl ~ engine_litres + weight_kg + power_kw", data=z).fit()
+print("Standardised (effect of a one-SD change, in SDs of the response):")
+for name in ["engine_litres", "weight_kg", "power_kw"]:
+    print(f"  {name:<14} {standardised.params[name]:+.4f}")`}
+</PythonCell>
+
+Standardised coefficients answer "which predictor matters most?" in a way raw coefficients cannot,
+because raw coefficients depend entirely on the units each variable happens to be measured in.
+
+<h2 id="significance">Significance, honestly</h2>
+
+A p-value is the probability of observing a coefficient at least this far from zero **if the true
+coefficient were exactly zero** and every model assumption held. That is all it is.
+
+What it is **not**:
+
+- Not the probability the null hypothesis is true.
+- Not the probability the result is a fluke.
+- Not a measure of effect size. With 260 observations a trivially small effect can be highly
+  significant; with 12 observations a large one may not be.
+- Not a licence to ignore the confidence interval, which carries strictly more information.
+
+The 0.05 threshold is a convention, not a law of nature. A p-value of 0.049 and one of 0.051 are
+essentially the same evidence, and treating them as categorically different is how a great deal of
+poor analysis happens.
+
+<Callout title="What multiple testing does to p-values" variant="pitfall">
+  <p>
+    Test twenty independent null hypotheses at the 5% level and you should expect one "significant"
+    result purely by chance. Adding predictors until something reaches p &lt; 0.05 guarantees you
+    find one. If you test many things, either correct for it (Bonferroni divides the threshold by
+    the number of tests) or state plainly that the analysis was exploratory.
+  </p>
+</Callout>
+
+<h2 id="intervals">Confidence vs. prediction intervals</h2>
+
+These are routinely confused and answer genuinely different questions.
+
+A **confidence interval** for the mean response at some $x$ says: where is the *average* kpl of
+all vehicles with these characteristics? Its width depends only on uncertainty in the estimated
+coefficients, so it shrinks toward zero as the sample grows.
+
+A **prediction interval** for a new observation says: where will *this particular vehicle* land?
+It must account for coefficient uncertainty **plus** the irreducible scatter of individual
+vehicles around the line. It is always wider, and it does **not** shrink to zero — no amount of
+data removes the noise term $\varepsilon$.
+
+$$
+\text{CI width} \propto \sqrt{\operatorname{Var}(\hat{y})}
+\qquad
+\text{PI width} \propto \sqrt{\operatorname{Var}(\hat{y}) + \sigma^2}
+$$
+
+<PythonCell label="Both intervals, on the same prediction">
+{`import matplotlib.pyplot as plt
+
+new_car = pd.DataFrame({
+    "engine_litres": [2.0],
+    "weight_kg": [1450],
+    "power_kw": [120],
+})
+
+prediction = model.get_prediction(new_car)
+frame = prediction.summary_frame(alpha=0.05)
+
+print(frame.round(3).to_string(index=False))
+print()
+print(f"point estimate      {frame['mean'][0]:.2f} kpl")
+print(f"95% CI  (the mean)  [{frame['mean_ci_lower'][0]:.2f}, {frame['mean_ci_upper'][0]:.2f}]"
+      f"   width {frame['mean_ci_upper'][0] - frame['mean_ci_lower'][0]:.2f}")
+print(f"95% PI  (one car)   [{frame['obs_ci_lower'][0]:.2f}, {frame['obs_ci_upper'][0]:.2f}]"
+      f"   width {frame['obs_ci_upper'][0] - frame['obs_ci_lower'][0]:.2f}")
+
+print()
+print("The prediction interval is far wider, and unlike the CI it does not")
+print("shrink as the sample grows - it contains the irreducible noise.")
+
+# Both intervals across a sweep of engine sizes.
+sweep = pd.DataFrame({
+    "engine_litres": np.linspace(1.0, 5.0, 60),
+    "weight_kg": cars["weight_kg"].mean(),
+    "power_kw": cars["power_kw"].mean(),
+})
+band = model.get_prediction(sweep).summary_frame(alpha=0.05)
+
+fig, ax = plt.subplots()
+ax.scatter(cars["engine_litres"], cars["city_kpl"], s=10, alpha=0.35)
+ax.plot(sweep["engine_litres"], band["mean"], linewidth=2)
+ax.fill_between(sweep["engine_litres"], band["obs_ci_lower"], band["obs_ci_upper"], alpha=0.15)
+ax.fill_between(sweep["engine_litres"], band["mean_ci_lower"], band["mean_ci_upper"], alpha=0.4)
+ax.set_xlabel("engine (litres)")
+ax.set_ylabel("city_kpl")
+ax.set_title("Narrow band: mean response. Wide band: a single vehicle.")`}
+</PythonCell>
+
+<h2 id="prediction">Predicting new values, and when not to</h2>
+
+Two rules govern honest prediction from a regression.
+
+**Do not extrapolate.** The model has seen engines from 1.0 to 5.0 litres. Asking it about a
+9-litre engine produces a number with no evidence behind it, and the confidence interval will not
+warn you — the interval widens, but it is computed under the assumption that the linear
+relationship continues, which is exactly the assumption at issue.
+
+**Watch the condition number.** For this model it is around 12,900, which is very high. The
+predictors are correlated at 0.85 to 0.94, so the fit cannot cleanly separate their individual
+contributions. Predictions remain fine — collinearity does not bias fitted values — but the
+*individual coefficients* are unstable, and that is what people usually want to interpret.
+
+<PythonCell label="Multicollinearity, measured">
+{`from statsmodels.stats.outliers_influence import variance_inflation_factor
+import statsmodels.api as sm
+
+X = sm.add_constant(cars[["engine_litres", "weight_kg", "power_kw"]])
+
+print("Variance inflation factors (1 = no collinearity, >5 worth noting, >10 serious):")
+for i, name in enumerate(X.columns):
+    if name == "const":
+        continue
+    print(f"  {name:<14} VIF = {variance_inflation_factor(X.values, i):6.2f}")
+
+print()
+print(f"condition number: {model.condition_number:,.0f}")
+
+print()
+print("Dropping the most collinear predictor moves the others substantially:")
+reduced = smf.ols("city_kpl ~ engine_litres + weight_kg", data=cars).fit()
+comparison = pd.DataFrame({
+    "full model": model.params,
+    "without power_kw": reduced.params,
+}).dropna()
+print(comparison.round(5).to_string())
+print()
+print(f"R2 full {model.rsquared:.4f}   R2 reduced {reduced.rsquared:.4f}"
+      "   <- prediction barely suffers")`}
+</PythonCell>
+
+The last comparison is the practical signature of multicollinearity: dropping a predictor barely
+moves $R^2$ but substantially moves the remaining coefficients. If your conclusion depends on the
+exact value of one coefficient, and that value swings when a correlated predictor is added or
+removed, the conclusion is not safe.
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "The weight coefficient is −0.00356. A colleague says weight barely matters. Are they right?",
+      options: [
+        {
+          text: "No — the coefficient is per kilogram, and vehicles differ by hundreds of kilograms.",
+          correct: true,
+          explanation:
+            "Right. 300 kg × 0.00356 ≈ 1.07 kpl, a substantial effect. Always rescale a coefficient to a difference that actually occurs in the data before judging its size.",
+        },
+        {
+          text: "Yes — any coefficient below 0.01 is negligible.",
+          explanation:
+            "There is no such threshold. The magnitude of a coefficient depends entirely on the units of its predictor, which is exactly why standardised coefficients exist.",
+        },
+        {
+          text: "Impossible to say without the p-value.",
+          explanation:
+            "The p-value speaks to whether the effect is distinguishable from zero, not to whether it is practically large. Those are separate questions, and this one is about size.",
+        },
+      ],
+    },
+    {
+      prompt: "What does a 95% prediction interval cover that a 95% confidence interval does not?",
+      options: [
+        {
+          text: "The irreducible scatter of individual observations around the regression line.",
+          correct: true,
+          explanation:
+            "Exactly. The CI covers uncertainty about the mean and shrinks with more data; the PI adds σ² for individual variation and never shrinks below that floor.",
+        },
+        {
+          text: "The possibility that the model is misspecified.",
+          explanation:
+            "Neither interval covers that. Both are computed *assuming* the model is correct — which is why the assumption checks in the next lesson matter so much.",
+        },
+        {
+          text: "Nothing — they are the same interval computed two ways.",
+          explanation:
+            "They differ substantially, and the prediction interval is always the wider of the two.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "The model's condition number is ~12,900 and VIFs exceed 10. What is the practical consequence?",
+      options: [
+        {
+          text: "Predictions stay reliable, but individual coefficients are unstable and hard to interpret.",
+          correct: true,
+          explanation:
+            "Correct. Collinearity inflates coefficient standard errors without biasing fitted values. If you need prediction you are fine; if you need to interpret a specific coefficient, you are not.",
+        },
+        {
+          text: "The model's predictions are biased and should not be used.",
+          explanation:
+            "Collinearity does not bias predictions. The fitted surface is still the least-squares fit; it is only the decomposition into individual contributions that becomes unstable.",
+        },
+        {
+          text: "R² is overstated and the true fit is worse.",
+          explanation:
+            "R² is unaffected by collinearity among predictors. What is affected is the standard error of each coefficient.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="95-105" />

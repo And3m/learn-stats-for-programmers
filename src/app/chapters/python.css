@@ -1,0 +1,222 @@
+/* ===========================================================================
+   Runnable Python cells and the runtime banner.
+   Imported by src/app/chapters/layout.tsx alongside lesson.css.
+   =========================================================================== */
+
+.runtime-status {
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr) auto;
+  gap: 0.85rem;
+  align-items: start;
+  padding: 0.95rem 1.1rem;
+  margin: 2rem 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  font-family: var(--font-sans);
+}
+
+.runtime-status[data-status="ready"] {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--border));
+}
+
+.runtime-status[data-status="error"] {
+  border-color: color-mix(in srgb, var(--bad) 45%, var(--border));
+}
+
+.runtime-status__icon {
+  display: flex;
+  padding-top: 0.15rem;
+  color: var(--muted);
+}
+
+.runtime-status[data-status="ready"] .runtime-status__icon {
+  color: var(--ok);
+}
+
+.runtime-status[data-status="error"] .runtime-status__icon {
+  color: var(--bad);
+}
+
+.runtime-status__spinner {
+  animation: runtime-spin 1s linear infinite;
+}
+
+@keyframes runtime-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.runtime-status__headline {
+  margin: 0 0 0.2rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.runtime-status__detail {
+  margin: 0;
+  font-size: 0.78125rem;
+  line-height: 1.55;
+  color: var(--muted);
+}
+
+.runtime-status__actions {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  white-space: nowrap;
+}
+
+.runtime-status__actions .btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+@media (max-width: 620px) {
+  .runtime-status {
+    grid-template-columns: 1.25rem minmax(0, 1fr);
+  }
+
+  .runtime-status__actions {
+    grid-column: 2;
+    margin-top: 0.6rem;
+  }
+}
+
+/* --- the cell ------------------------------------------------------------- */
+
+.python-cell {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  margin: 1.75rem 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+}
+
+.python-cell__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.55rem 0.45rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.python-cell__label {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.python-cell__actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.python-cell__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid transparent;
+  border-radius: 0.4rem;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.78125rem;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.python-cell__action:hover:not(:disabled) {
+  background: var(--background);
+  color: var(--foreground);
+  border-color: var(--border);
+}
+
+.python-cell__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.python-cell__action--run {
+  color: var(--signal);
+  border-color: color-mix(in srgb, var(--signal) 30%, transparent);
+}
+
+.python-cell__action--run:hover:not(:disabled) {
+  color: var(--signal);
+  background: var(--signal-soft);
+  border-color: color-mix(in srgb, var(--signal) 45%, transparent);
+}
+
+.python-cell__editor {
+  background: var(--background);
+}
+
+.python-cell__editor .cm-editor {
+  background: var(--background);
+}
+
+.python-cell__placeholder {
+  margin: 0;
+  padding: 1rem 1.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--faint);
+  background: var(--background);
+}
+
+.python-cell__status {
+  margin: 0;
+  padding: 0.7rem 1.1rem;
+  font-size: 0.78125rem;
+  color: var(--muted);
+  border-top: 1px solid var(--border);
+}
+
+.python-cell__output {
+  border-top: 1px solid var(--border);
+  background: var(--background);
+  padding: 0.35rem 0;
+}
+
+.python-cell__stream,
+.python-cell__repr,
+.python-cell__error {
+  margin: 0;
+  padding: 0.7rem 1.1rem;
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-x: auto;
+}
+
+.python-cell__stream [data-stream="stderr"] {
+  color: var(--warn);
+}
+
+.python-cell__repr {
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+.python-cell__error {
+  color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 7%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--bad) 25%, transparent);
+}
+
+.python-cell__figure {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 0.5rem 1.1rem 0.85rem;
+}

@@ -1,0 +1,230 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explore a dataset before modelling it, and know what you are looking for.</li>
+    <li>Fit a multiple linear regression with statsmodels.</li>
+    <li>Read every block of the summary table.</li>
+  </ul>
+</Callout>
+
+From here to the end of the chapter we work with one dataset: 260 vehicle models with engine size,
+kerb weight, power output and measured city fuel economy in kilometres per litre. It is synthetic,
+generated from a known relationship, which means we can check what the model recovers against what
+is actually there — a luxury real data never gives you.
+
+<h2 id="the-data">Exploring before modelling</h2>
+
+Fitting before looking is how people end up modelling a data-entry error. The minimum useful pass
+is: check the shape, check for missing values, look at the marginal distributions, and look at
+the pairwise relationships with the response.
+
+<PythonCell label="First contact with the data">
+{`import numpy as np
+import pandas as pd
+
+cars = pd.read_csv("fuel-efficiency.csv")
+
+print(cars.shape)
+print()
+print(cars.head().to_string(index=False))
+print()
+print("missing values per column:")
+print(cars.isna().sum().to_string())
+print()
+print(cars.describe().round(2).to_string())`}
+</PythonCell>
+
+Nothing missing and no impossible values. Now look at the relationships. For a first pass, the
+correlation matrix plus a scatter of each predictor against the response tells you most of what
+you need — including whether any relationship looks curved rather than straight.
+
+<PythonCell label="Correlations and scatters">
+{`import matplotlib.pyplot as plt
+
+predictors = ["engine_litres", "weight_kg", "power_kw", "cylinders"]
+
+print("correlation with city_kpl:")
+print(cars[predictors + ["city_kpl"]].corr()["city_kpl"].round(3).to_string())
+
+print()
+print("correlations among the predictors themselves:")
+print(cars[predictors].corr().round(3).to_string())
+
+fig, axes = plt.subplots(1, 3, figsize=(9.5, 3.2))
+for ax, column in zip(axes, ["engine_litres", "weight_kg", "power_kw"]):
+    ax.scatter(cars[column], cars["city_kpl"], s=12, alpha=0.6)
+    ax.set_xlabel(column)
+axes[0].set_ylabel("city_kpl")
+plt.tight_layout()`}
+</PythonCell>
+
+Two things stand out, and both matter later.
+
+First, a scattering of points sits well above the main cloud — vehicles far more efficient than
+their engine size suggests. Those are the hybrids in the data, and lesson&nbsp;4.4 comes back to
+what they do to the diagnostics.
+
+Second, the predictors are **strongly correlated with each other**. Bigger engines are heavier and
+more powerful. This is multicollinearity, and it does not bias the fit but does make individual
+coefficients unstable and hard to interpret — a point lesson&nbsp;4.3 returns to.
+
+<h2 id="fitting">Fitting with statsmodels</h2>
+
+statsmodels offers two interfaces. The formula API mirrors R's syntax and handles the intercept
+and categorical variables for you; the array API is more explicit. The formula API is almost
+always the better choice for interpretive work.
+
+<PythonCell label="Fitting the model">
+{`import statsmodels.formula.api as smf
+
+model = smf.ols("city_kpl ~ engine_litres + weight_kg + power_kw", data=cars).fit()
+
+print(model.summary())`}
+</PythonCell>
+
+<Callout title="Do not skip the summary">
+  <p>
+    It is tempting to pull out <code>model.params</code> and move on. The summary table is where
+    every warning about your model lives — non-significant terms, a suspicious condition number, a
+    skewed residual distribution. Reading it takes thirty seconds and routinely saves an hour.
+  </p>
+</Callout>
+
+<h2 id="the-summary">Reading the summary table</h2>
+
+The output has three blocks. Taking them in order:
+
+**Top-left — what was fitted.** The response variable, the method (`Least Squares`), and the
+number of observations. `Df Residuals` is $n - k - 1$, the observations minus the parameters
+estimated.
+
+**Top-right — how well it fits.**
+
+- `R-squared` — proportion of variance explained.
+- `Adj. R-squared` — the same, penalised for the number of predictors. Quote this one.
+- `F-statistic` and `Prob (F-statistic)` — a test of whether the model as a whole beats an
+  intercept-only model. A tiny p-value means at least one predictor is doing something. It says
+  nothing about *which*.
+- `AIC` / `BIC` — for comparing non-nested models. Lower is better; the absolute value is
+  meaningless on its own.
+
+**Middle — the coefficients.** One row per term:
+
+- `coef` — the estimated effect, per unit, holding the others fixed.
+- `std err` — the uncertainty in that estimate.
+- `t` and `P>|t|` — the coefficient divided by its standard error, and the probability of seeing a
+  $t$ that large if the true coefficient were zero.
+- `[0.025 0.975]` — the 95% confidence interval. If it straddles zero, the p-value is above 0.05;
+  these two facts are the same fact.
+
+**Bottom — diagnostics.** `Omnibus`, `Jarque-Bera` and `Prob(JB)` test whether the residuals look
+normal. `Skew` and `Kurtosis` describe how they deviate. `Durbin-Watson` tests for autocorrelation
+— it should sit near 2. `Cond. No.` flags multicollinearity; above about 30 is worth a look, above
+1000 is a problem. Lesson&nbsp;4.4 takes all of these seriously.
+
+<PythonCell label="Pulling the numbers out programmatically">
+{`import pandas as pd
+
+table = pd.DataFrame({
+    "coefficient": model.params,
+    "std_error": model.bse,
+    "t": model.tvalues,
+    "p_value": model.pvalues,
+    "ci_low": model.conf_int()[0],
+    "ci_high": model.conf_int()[1],
+})
+print(table.round(5).to_string())
+
+print()
+print(f"R-squared        {model.rsquared:.4f}")
+print(f"Adj. R-squared   {model.rsquared_adj:.4f}")
+print(f"F-statistic      {model.fvalue:.2f}  (p = {model.f_pvalue:.3e})")
+print(f"residual std err {np.sqrt(model.scale):.4f} kpl")
+print(f"observations     {int(model.nobs)}")
+
+print()
+print("The data were generated from:")
+print("  city_kpl = 24.5 - 1.85*engine - 0.0042*weight + 0.021*power + noise(sd 1.1)")
+print("Recovered:")
+for name, truth in [("Intercept", 24.5), ("engine_litres", -1.85),
+                    ("weight_kg", -0.0042), ("power_kw", 0.021)]:
+    est = model.params[name]
+    lo, hi = model.conf_int().loc[name]
+    covered = "yes" if lo <= truth <= hi else "NO"
+    print(f"  {name:<14} {est:>9.5f}   truth {truth:>9.5f}   in 95% CI: {covered}")`}
+</PythonCell>
+
+The final block is the sanity check you can only run on synthetic data: does the 95% confidence
+interval actually contain the true value? For a correctly specified model it should, about 95% of
+the time. Where it does not, the culprit is usually the hybrids — a small group the model has no
+predictor for, quietly dragging the estimates.
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does a very small Prob (F-statistic) tell you?",
+      options: [
+        {
+          text: "The model as a whole explains more than an intercept-only model would.",
+          correct: true,
+          explanation:
+            "Right — the F-test is a joint test of all slopes being zero. Rejecting it means at least one predictor is doing something, but it does not identify which one.",
+        },
+        {
+          text: "Every individual predictor is statistically significant.",
+          explanation:
+            "Not implied at all. With correlated predictors it is entirely possible for the F-test to be decisive while no single coefficient reaches significance.",
+        },
+        {
+          text: "The model's predictions will be accurate on new data.",
+          explanation:
+            "The F-test is computed on the fitting data and says nothing about out-of-sample performance. That needs a held-out set, which is chapter 6's territory.",
+        },
+      ],
+    },
+    {
+      prompt: "A coefficient's 95% confidence interval is [−0.4, 1.9]. What is its p-value?",
+      options: [
+        {
+          text: "Above 0.05, since the interval contains zero.",
+          correct: true,
+          explanation:
+            "Correct — these are two views of the same computation. An interval straddling zero and a p-value above 0.05 always occur together at the same confidence level.",
+        },
+        {
+          text: "Below 0.05, since the interval is mostly positive.",
+          explanation:
+            "Where the interval sits is irrelevant; what matters is whether it includes zero. It does, so the null cannot be rejected at the 5% level.",
+        },
+        {
+          text: "Cannot be determined from the interval alone.",
+          explanation:
+            "It can, at the corresponding confidence level: interval contains zero ⟺ p > 0.05 for a 95% interval.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does exploring the data before fitting matter here?",
+      options: [
+        {
+          text: "It surfaces the hybrid outliers and the correlation among predictors before either can silently distort the interpretation.",
+          correct: true,
+          explanation:
+            "Exactly. Both are visible in five minutes of plotting and correlation, and both change how the summary table should be read.",
+        },
+        {
+          text: "statsmodels requires the data to be inspected before ols() will run.",
+          explanation:
+            "It will happily fit anything you hand it, including data with obvious errors in it. That is precisely the problem.",
+        },
+        {
+          text: "Because correlations must be removed before fitting a regression.",
+          explanation:
+            "Correlation between predictors and the response is what you are modelling. Correlation *among* predictors is worth knowing about but does not have to be removed — it affects interpretation, not validity.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="87-95" />

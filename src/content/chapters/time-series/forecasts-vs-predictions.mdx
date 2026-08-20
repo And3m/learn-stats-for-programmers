@@ -1,0 +1,251 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what makes time-series data different from everything so far.</li>
+    <li>Separate a series into trend, seasonality and remainder.</li>
+    <li>Establish a naive benchmark before fitting anything.</li>
+  </ul>
+</Callout>
+
+Every model so far assumed observations were independent. Time series break that assumption
+completely — today's value is related to yesterday's, and that dependence is not a nuisance to be
+corrected. It is the signal.
+
+<h2 id="the-distinction">The distinction</h2>
+
+"Forecast" and "prediction" get used interchangeably; keeping them apart is useful.
+
+A **prediction** maps features to an outcome. Given engine size, weight and power, predict fuel
+economy. Order does not matter; you could shuffle the rows and lose nothing.
+
+A **forecast** extends a sequence forward in time. Given sessions every day for four years,
+estimate the next four weeks. Order is everything, and the only feature you have is the past of
+the series itself.
+
+Two consequences follow immediately, and both are places people go wrong.
+
+**You cannot shuffle before splitting.** A random train/test split lets the model learn from
+Wednesday to predict Tuesday, which is information it will never have in production. Time-series
+validation must split chronologically — train on the past, test on the future.
+
+**Uncertainty compounds with horizon.** A one-step forecast is usually decent. A fifty-step
+forecast inherits every earlier error. Forecast intervals widen with the horizon, and if yours do
+not, something is wrong.
+
+<h2 id="components">Trend, seasonality, noise</h2>
+
+The classical decomposition treats a series as three parts:
+
+$$
+y_t = T_t + S_t + R_t \quad\text{(additive)}
+\qquad\text{or}\qquad
+y_t = T_t \times S_t \times R_t \quad\text{(multiplicative)}
+$$
+
+- **Trend** ($T_t$) — the long-run direction, after the wobble is smoothed away.
+- **Seasonality** ($S_t$) — a pattern that repeats on a fixed known period. Day of week, month of
+  year, hour of day.
+- **Remainder** ($R_t$) — what is left. If the decomposition is good, this looks like noise.
+
+Choose additive when the seasonal swing is roughly the same size regardless of level; choose
+multiplicative when the swing grows with the level. A quick test: plot the series and ask whether
+the peaks and troughs diverge over time.
+
+<Callout title="Seasonality has a fixed period. Cycles do not." variant="warning">
+  <p>
+    Seasonality repeats on a known, fixed schedule — every 7 days, every 12 months. A{" "}
+    <em>cycle</em> — a business cycle, a boom and bust — has no fixed length and cannot be handled
+    the same way. Decomposition models seasonality. Cycles end up in the trend or the remainder,
+    which is one reason long-horizon economic forecasting is so hard.
+  </p>
+</Callout>
+
+<h2 id="the-data">Plotting the series</h2>
+
+The dataset for this chapter is four years of daily sessions on a website: 1,461 observations from
+January 2021 to December 2024.
+
+<PythonCell label="Look at it before anything else">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+traffic = pd.read_csv("web-traffic.csv", parse_dates=["date"]).set_index("date")
+traffic.index.freq = "D"
+sessions = traffic["sessions"]
+
+print(f"{len(sessions)} days, {sessions.index.min().date()} to {sessions.index.max().date()}")
+print(sessions.describe().round(0).to_string())
+
+fig, (top, bottom) = plt.subplots(2, 1, figsize=(9.5, 5.5))
+top.plot(sessions.index, sessions.values, linewidth=0.6)
+top.plot(sessions.index, sessions.rolling(28, center=True).mean(), linewidth=2)
+top.set_title("Four years of daily sessions, with a 28-day rolling mean")
+top.set_ylabel("sessions")
+
+recent = sessions.iloc[-84:]
+bottom.plot(recent.index, recent.values, marker="o", markersize=2.5, linewidth=1)
+bottom.set_title("The last twelve weeks - the weekly cycle is unmistakable")
+bottom.set_ylabel("sessions")
+plt.tight_layout()
+
+print()
+days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+by_weekday = sessions.groupby(sessions.index.dayofweek).mean()
+print("Average sessions by day of week:")
+for index, value in by_weekday.items():
+    bar = "#" * int(value / 400)
+    print(f"  {days[index]}  {value:8,.0f}  {bar}")`}
+</PythonCell>
+
+Two features are obvious from the plot and one from the table: a clear upward trend, a strong
+weekly cycle with weekends roughly half of weekdays, and a milder annual wave.
+
+<PythonCell label="Decomposing the series">
+{`from statsmodels.tsa.seasonal import seasonal_decompose
+
+decomposition = seasonal_decompose(sessions, model="additive", period=7)
+
+fig, axes = plt.subplots(4, 1, figsize=(9.5, 7), sharex=True)
+axes[0].plot(sessions.index, sessions.values, linewidth=0.6)
+axes[0].set_ylabel("observed")
+axes[1].plot(decomposition.trend.index, decomposition.trend.values, linewidth=1.2)
+axes[1].set_ylabel("trend")
+axes[2].plot(decomposition.seasonal.index[:56], decomposition.seasonal.values[:56], linewidth=1.2)
+axes[2].set_ylabel("seasonal")
+axes[3].plot(decomposition.resid.index, decomposition.resid.values, linewidth=0.5)
+axes[3].set_ylabel("remainder")
+axes[0].set_title("Additive decomposition, weekly period")
+plt.tight_layout()
+
+seasonal_pattern = decomposition.seasonal[:7]
+print("Weekly seasonal effect (sessions above or below trend):")
+days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+for date, value in seasonal_pattern.items():
+    print(f"  {days[date.dayofweek]}  {value:+9,.0f}")
+
+remainder = decomposition.resid.dropna()
+print()
+print(f"remainder sd {remainder.std():,.0f} sessions "
+      f"({remainder.std() / sessions.mean():.1%} of the mean)")
+print(f"trend: {decomposition.trend.dropna().iloc[0]:,.0f} -> "
+      f"{decomposition.trend.dropna().iloc[-1]:,.0f} sessions/day over four years")`}
+</PythonCell>
+
+<h2 id="the-benchmark">Establish a benchmark first</h2>
+
+Before fitting anything, know what trivial methods achieve. Two are standard:
+
+- **Naive**: tomorrow equals today. $\hat{y}_{t+h} = y_t$.
+- **Seasonal naive**: tomorrow equals the same weekday last week. $\hat{y}_{t+h} = y_{t+h-m}$.
+
+A model that cannot beat these has earned nothing, and the second is much harder to beat than
+people expect on strongly seasonal data. Skipping this step is how sophisticated-looking
+forecasting projects end up worse than a one-line rule.
+
+<PythonCell label="What the trivial methods achieve">
+{`horizon = 28
+train, test = sessions[:-horizon], sessions[-horizon:]
+
+def mape(actual, forecast):
+    return float(np.mean(np.abs((np.asarray(actual) - np.asarray(forecast)) / np.asarray(actual))) * 100)
+
+def mae(actual, forecast):
+    return float(np.mean(np.abs(np.asarray(actual) - np.asarray(forecast))))
+
+naive = np.full(horizon, train.iloc[-1])
+seasonal_naive = np.array([train.iloc[-7 + (i % 7)] for i in range(horizon)])
+mean_forecast = np.full(horizon, train.mean())
+
+print(f"Forecasting {horizon} days ahead:")
+print(f"{'method':<20}{'MAPE %':>9}{'MAE':>10}")
+for name, forecast in [
+    ("mean of history", mean_forecast),
+    ("naive (last value)", naive),
+    ("seasonal naive", seasonal_naive),
+]:
+    print(f"{name:<20}{mape(test, forecast):>9.2f}{mae(test, forecast):>10,.0f}")
+
+print()
+print("Seasonal naive is the number to beat. Any model that cannot")
+print("improve on 'same weekday last week' is not earning its complexity.")
+
+fig, ax = plt.subplots()
+context = sessions[-(horizon + 56):]
+ax.plot(context.index, context.values, linewidth=1, label="actual")
+ax.plot(test.index, seasonal_naive, linewidth=2, linestyle="--", label="seasonal naive")
+ax.plot(test.index, naive, linewidth=2, linestyle=":", label="naive")
+ax.axvline(train.index[-1], linewidth=1)
+ax.set_title("Benchmarks on the held-out final four weeks")
+ax.legend(fontsize=8)`}
+</PythonCell>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why can't you use a random train/test split on a time series?",
+      options: [
+        {
+          text: "It lets the model learn from future observations to predict past ones — information it will never have in production.",
+          correct: true,
+          explanation:
+            "Right. Time-series validation must split chronologically, and ideally use rolling-origin evaluation so the test period is always strictly after the training period.",
+        },
+        {
+          text: "Because time series always have missing values.",
+          explanation:
+            "Missing values are a separate practical issue and not what makes random splitting invalid. The problem is temporal leakage.",
+        },
+        {
+          text: "It is fine as long as the series is stationary.",
+          explanation:
+            "Stationarity concerns the statistical properties of the series, not the leakage introduced by shuffling. Even a perfectly stationary series must be split in time order.",
+        },
+      ],
+    },
+    {
+      prompt: "When should you prefer a multiplicative decomposition over an additive one?",
+      options: [
+        {
+          text: "When the size of the seasonal swing grows as the level of the series grows.",
+          correct: true,
+          explanation:
+            "Correct. Additive assumes a constant absolute swing; multiplicative assumes a constant proportional one. Plot the series and see whether the peaks and troughs diverge over time.",
+        },
+        {
+          text: "When the series has a strong upward trend.",
+          explanation:
+            "A trend alone does not decide it. What matters is whether the seasonal amplitude scales with the level, which can happen with or without a trend.",
+        },
+        {
+          text: "When the seasonal period is longer than a year.",
+          explanation:
+            "Period length is unrelated to the choice. Either form works at any period.",
+        },
+      ],
+    },
+    {
+      prompt: "Why establish a seasonal-naive benchmark before modelling?",
+      options: [
+        {
+          text: "It is often surprisingly hard to beat, and a model that cannot beat it has earned nothing.",
+          correct: true,
+          explanation:
+            "Exactly — and on this dataset the seasonal-naive benchmark turns out to beat both the fitted models in later lessons. Without the benchmark you would never have known.",
+        },
+        {
+          text: "Because statsmodels requires a baseline to fit against.",
+          explanation:
+            "It requires nothing of the sort. The benchmark is a discipline you impose, not a technical prerequisite.",
+        },
+        {
+          text: "To determine the seasonal period automatically.",
+          explanation:
+            "The period has to be known or identified separately, from domain knowledge or an ACF plot. The benchmark uses it; it does not discover it.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="185-191" />

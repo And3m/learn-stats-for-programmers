@@ -1,0 +1,256 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Write down the linear model and name every term in it.</li>
+    <li>Explain why least squares minimises squared error rather than absolute error.</li>
+    <li>Interpret R² correctly — and say what it does not tell you.</li>
+  </ul>
+</Callout>
+
+Linear regression is the most used and most misused technique in applied statistics. Used well it
+is a precise instrument for quantifying how much one thing moves when another does. Used badly it
+produces confident numbers about relationships that are not there.
+
+This lesson builds the model from scratch — including solving it by hand — so that the summary
+table in the next lesson contains no magic.
+
+<h2 id="the-equation">The equation</h2>
+
+For a single predictor, the model is
+
+$$
+y_i = \beta_0 + \beta_1 x_i + \varepsilon_i
+$$
+
+- $y_i$ — the **response**, the thing you are predicting.
+- $x_i$ — the **predictor**, the thing you are predicting from.
+- $\beta_0$ — the **intercept**: the fitted value of $y$ when $x = 0$.
+- $\beta_1$ — the **slope**: how much $y$ changes for a one-unit increase in $x$.
+- $\varepsilon_i$ — the **error**: everything about $y_i$ the line does not explain.
+
+With several predictors it extends in the obvious way:
+
+$$
+y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + \cdots + \beta_k x_{ik} + \varepsilon_i
+$$
+
+The crucial shift in meaning: in multiple regression, $\beta_1$ is the effect of $x_1$
+**holding every other predictor fixed**. That phrase is doing enormous work, and lesson&nbsp;4.3
+is largely about respecting it.
+
+<Callout title="Linear in the coefficients, not in the variables">
+  <p>
+    "Linear" constrains how the <em>coefficients</em> enter, not the predictors. Fitting{" "}
+    <code>y ~ x + x**2</code> is still a linear model, and so is <code>y ~ log(x)</code>. What
+    would <em>not</em> be linear is something like <code>y = x^β</code>. This is why linear
+    regression handles far more curvature than its name suggests.
+  </p>
+</Callout>
+
+<h2 id="least-squares">Why least squares</h2>
+
+Infinitely many lines pass near a cloud of points. Ordinary least squares picks the one minimising
+the sum of squared vertical distances:
+
+$$
+\text{minimise} \quad \sum_{i=1}^{n} \left(y_i - \hat{y}_i\right)^2
+= \sum_{i=1}^{n} \left(y_i - \beta_0 - \beta_1 x_i\right)^2
+$$
+
+Why squared, rather than absolute, distance? Three reasons, in increasing order of honesty:
+
+1. **It has a closed-form solution.** Differentiate, set to zero, solve. Absolute error requires
+   iterative optimisation.
+2. **Under normally distributed errors it is the maximum-likelihood estimate**, which gives the
+   whole apparatus of standard errors and p-values a firm footing.
+3. **It was computationally tractable in 1805**, and the machinery built on top of it since is
+   enormous.
+
+The cost is a real one: squaring makes the fit **sensitive to outliers**. A point ten units away
+contributes a hundred times more than a point one unit away. That sensitivity is why
+lesson&nbsp;4.4 spends so long on diagnostics.
+
+For a single predictor the solution is worth seeing, because it shows the slope is essentially a
+scaled correlation:
+
+$$
+\hat{\beta}_1 = \frac{\sum (x_i - \bar{x})(y_i - \bar{y})}{\sum (x_i - \bar{x})^2}
+= r_{xy}\,\frac{s_y}{s_x},
+\qquad
+\hat{\beta}_0 = \bar{y} - \hat{\beta}_1 \bar{x}
+$$
+
+The second expression also shows that the fitted line always passes through $(\bar{x}, \bar{y})$.
+
+<PythonCell label="Solving least squares three ways">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(5)
+
+# Ground truth we will try to recover: y = 3.2 - 0.75x + noise
+n = 120
+x = rng.uniform(0, 10, n)
+y = 3.2 - 0.75 * x + rng.normal(0, 1.2, n)
+
+# 1. The closed-form formulas above.
+x_dev, y_dev = x - x.mean(), y - y.mean()
+slope = (x_dev * y_dev).sum() / (x_dev ** 2).sum()
+intercept = y.mean() - slope * x.mean()
+print(f"by formula     intercept {intercept:7.4f}   slope {slope:7.4f}")
+
+# 2. As a correlation, rescaled.
+r = np.corrcoef(x, y)[0, 1]
+print(f"as r*(sy/sx)                        slope {r * y.std(ddof=1) / x.std(ddof=1):7.4f}")
+
+# 3. Solving the normal equations with linear algebra (how it scales to many predictors).
+design = np.column_stack([np.ones(n), x])
+beta, *_ = np.linalg.lstsq(design, y, rcond=None)
+print(f"by lstsq       intercept {beta[0]:7.4f}   slope {beta[1]:7.4f}")
+print(f"truth          intercept  3.2000   slope -0.7500")
+
+fig, ax = plt.subplots()
+ax.scatter(x, y, s=14, alpha=0.65)
+grid = np.array([x.min(), x.max()])
+ax.plot(grid, intercept + slope * grid, linewidth=2)
+ax.scatter([x.mean()], [y.mean()], marker="x", s=90, zorder=5)
+ax.set_xlabel("x")
+ax.set_ylabel("y")
+ax.set_title("The fitted line passes through the point of means")`}
+</PythonCell>
+
+<h2 id="r-squared">Goodness of fit and R-squared</h2>
+
+$R^2$ is the proportion of the response's variance the model accounts for:
+
+$$
+R^2 = 1 - \frac{SS_{\text{res}}}{SS_{\text{tot}}}
+= 1 - \frac{\sum (y_i - \hat{y}_i)^2}{\sum (y_i - \bar{y})^2}
+$$
+
+The denominator is how much $y$ varies around its own mean — the error you would make predicting
+with the mean alone. The numerator is how much variation is left after the model. So $R^2 = 0.72$
+means the model removed 72% of the variance that predicting the mean would have left.
+
+Three things $R^2$ does **not** tell you, all of which matter:
+
+- **Whether the relationship is linear.** A perfect parabola fitted with a straight line can still
+  post a respectable $R^2$.
+- **Whether the model is useful.** In some domains 0.3 is excellent; in others 0.95 means you have
+  accidentally included the answer as a predictor.
+- **Whether adding a predictor helped.** $R^2$ never decreases when you add a variable, even a
+  column of random noise. **Adjusted $R^2$** penalises that, and is the one to quote for multiple
+  regression.
+
+<PythonCell label="Two warnings about R-squared">
+{`import numpy as np
+
+rng = np.random.default_rng(21)
+
+def r_squared(y, fitted):
+    ss_res = ((y - fitted) ** 2).sum()
+    ss_tot = ((y - y.mean()) ** 2).sum()
+    return 1 - ss_res / ss_tot
+
+# 1. A clearly non-linear relationship can still score well.
+x = np.linspace(-3, 3, 200)
+y = x ** 2 + rng.normal(0, 0.6, 200)
+design = np.column_stack([np.ones(200), x])
+fitted = design @ np.linalg.lstsq(design, y, rcond=None)[0]
+print(f"straight line through a parabola: R2 = {r_squared(y, fitted):.4f}")
+print("  ... which is low here only because the parabola is symmetric about 0.")
+shifted = (x + 3) ** 2 + rng.normal(0, 0.6, 200)
+design2 = np.column_stack([np.ones(200), x])
+fitted2 = design2 @ np.linalg.lstsq(design2, shifted, rcond=None)[0]
+print(f"shift it off-centre and:          R2 = {r_squared(shifted, fitted2):.4f}  <- looks great, still wrong")
+
+print()
+# 2. R2 never falls when you add junk predictors.
+n = 60
+y2 = rng.normal(0, 1, n)
+columns = [np.ones(n)]
+print(" junk predictors      R2   adjusted R2")
+for k in [0, 5, 15, 30, 45]:
+    while len(columns) - 1 < k:
+        columns.append(rng.normal(0, 1, n))
+    X = np.column_stack(columns)
+    fit = X @ np.linalg.lstsq(X, y2, rcond=None)[0]
+    r2 = r_squared(y2, fit)
+    adj = 1 - (1 - r2) * (n - 1) / (n - k - 1)
+    print(f"   {k:3d}            {r2:.4f}      {adj:7.4f}")`}
+</PythonCell>
+
+The second experiment is worth staring at. Pure noise predictors, no relationship whatsoever, and
+$R^2$ climbs steadily toward 1 as you add them. Adjusted $R^2$ goes negative, which is the correct
+verdict.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does ordinary least squares minimise squared error rather than absolute error?",
+      options: [
+        {
+          text: "It has a closed-form solution and is the maximum-likelihood estimate under normal errors.",
+          correct: true,
+          explanation:
+            "Right on both counts, and the price is real: squaring makes the fit disproportionately sensitive to outliers, which is why diagnostics matter so much.",
+        },
+        {
+          text: "Because squared error is always smaller than absolute error.",
+          explanation:
+            "Not generally true, and not the reason. The choice is about tractability and the statistical properties that follow, not about magnitude.",
+        },
+        {
+          text: "Because absolute error can be negative.",
+          explanation:
+            "Absolute error is non-negative by definition. Squaring is one way to remove sign, but taking absolute values is another — the choice between them is about what happens next.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "You add 20 randomly generated predictors to a model. What happens to R² and adjusted R²?",
+      options: [
+        {
+          text: "R² rises; adjusted R² falls, possibly below zero.",
+          correct: true,
+          explanation:
+            "Exactly. R² never decreases when predictors are added, which is why it cannot be used to compare models of different sizes. Adjusted R² penalises the extra parameters and correctly reports that nothing was gained.",
+        },
+        {
+          text: "Both stay roughly the same, since the predictors carry no information.",
+          explanation:
+            "R² will climb noticeably, especially when the number of predictors approaches the number of observations. With enough junk columns you can drive it arbitrarily close to 1.",
+        },
+        {
+          text: "Both fall, because the model is now worse.",
+          explanation:
+            "R² is computed on the same data the model was fitted to, so it can only improve as flexibility is added. Only adjusted R² — or out-of-sample error — will report the problem.",
+        },
+      ],
+    },
+    {
+      prompt: "In a multiple regression, what does the coefficient on x₁ mean?",
+      options: [
+        {
+          text: "The change in y for a one-unit increase in x₁, holding all other predictors fixed.",
+          correct: true,
+          explanation:
+            "Correct, and the 'holding fixed' clause is load-bearing. It is why a coefficient can change sign when another predictor is added, and why correlated predictors make individual coefficients hard to interpret.",
+        },
+        {
+          text: "The change in y for a one-unit increase in x₁, ignoring the other predictors.",
+          explanation:
+            "That would be the simple regression coefficient of y on x₁ alone. In a multiple regression the other predictors are held constant, and the two numbers can differ dramatically.",
+        },
+        {
+          text: "The correlation between x₁ and y.",
+          explanation:
+            "In simple regression the slope is a rescaled correlation, but that equivalence breaks as soon as there is more than one predictor.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="81-87" />

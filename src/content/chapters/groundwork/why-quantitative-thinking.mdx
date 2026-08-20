@@ -1,0 +1,152 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what separates <em>reading</em> a number from <em>knowing what it licenses you to claim</em>.</li>
+    <li>Distinguish descriptive statistics, inferential statistics, and the broader family of quantitative methods.</li>
+    <li>Recognise the shape of a problem that wants a quantitative answer rather than a heuristic one.</li>
+  </ul>
+</Callout>
+
+Most working programmers already do statistics, whether or not they call it that. You compute a
+p95 latency. You compare last week's conversion rate to this week's. You look at a dashboard and
+decide that a spike is or is not worth waking someone up for. Those are all statistical acts.
+
+What is usually missing is not the arithmetic. It is the second half: knowing what the number
+entitles you to say.
+
+<h2 id="the-gap">The gap this course closes</h2>
+
+Consider a concrete case. Your team ships a change and conversion moves from 4.1% to 4.6%. Is
+that real?
+
+Almost everyone can compute the difference: half a percentage point, a 12% relative lift. Rather
+fewer can answer the questions that decide whether to act on it. How many visitors were in each
+group? How much does this metric bounce around week to week even when nothing changes? If you had
+run the same test against no change at all, how often would you have seen a gap this large by
+luck alone?
+
+Those questions have precise answers, and the answers sometimes reverse the decision entirely. A
+half-point lift on 400 visitors is noise. The same lift on 400,000 is a result you can build a
+quarter's roadmap around. The arithmetic is identical; the conclusion is not.
+
+<Callout title="The recurring pattern">
+  <p>
+    Nearly every technique in this course exists to answer one of two questions:{" "}
+    <strong>how much of what I am seeing is signal, and how much is noise?</strong> and{" "}
+    <strong>given what I have seen, what should I now expect?</strong> Regression, hypothesis
+    tests, control charts, Monte Carlo simulation and Markov chains are all different instruments
+    pointed at those same two questions.
+  </p>
+</Callout>
+
+<h2 id="stats-vs-quant">Statistics vs. quantitative methods</h2>
+
+Three labels get used loosely, and it helps to keep them apart.
+
+**Descriptive statistics** summarise data you already have. A mean, a median, a standard
+deviation, a histogram. They make no claim beyond the rows in front of you. If you have logged
+every request your service handled last month, the mean latency of those requests is simply a
+fact — there is nothing to infer.
+
+**Inferential statistics** use a sample to make claims about a population you did not fully
+observe. This is where uncertainty enters, and where most of the interesting machinery lives:
+confidence intervals, hypothesis tests, regression coefficients. The moment you say "and next
+month should look similar," you have left description behind.
+
+**Quantitative methods** is the broader family: anything that turns a decision problem into a
+model you can compute with. Linear programming, decision analysis, project scheduling and
+simulation are all quantitative methods that are barely statistical at all — they are about
+optimisation and structured choice under constraint. Chapters 8, 10 and 13 of this course are
+firmly in that territory.
+
+| | Answers | Uncertainty | Example |
+| --- | --- | --- | --- |
+| Descriptive | What happened? | None — it is a fact about your data | p95 latency last month |
+| Inferential | What is probably true in general? | Central | Is the new version faster? |
+| Quantitative methods | What should we do? | Sometimes | Which jobs to run on which machines |
+
+The distinction matters because the failure modes differ. Descriptive statistics fail when you
+summarise badly — a mean over a bimodal distribution, a percentage without its denominator.
+Inferential statistics fail when the assumptions behind the inference do not hold. Quantitative
+methods fail when the model omits the constraint that actually binds.
+
+<h2 id="where-it-shows-up">Where it shows up in real work</h2>
+
+Some of these will be familiar; the point is that each has a named technique behind it, and this
+course covers all of them.
+
+- **Is this alert real?** A metric crossed a threshold. Control charts (chapter&nbsp;14) exist
+  precisely to separate the variation a process always has from the variation that means
+  something changed.
+- **Which features drive the outcome?** Regression (chapters&nbsp;4 and&nbsp;5) and tree
+  ensembles (chapter&nbsp;6) both answer this, and they disagree in instructive ways.
+- **How long will this project take?** PERT and critical-path analysis (chapter&nbsp;13) turn
+  three-point estimates into a probability of hitting a date, rather than a single optimistic
+  number.
+- **What will next quarter look like?** Time-series models (chapter&nbsp;7) separate trend from
+  seasonality from noise and forecast with an interval, not a point.
+- **These invoices look odd.** Benford's law (chapter&nbsp;12) is a genuinely useful first-pass
+  anomaly detector over financial data.
+- **We cannot do everything — what should we do?** Linear programming (chapter&nbsp;8) finds the
+  best feasible plan given resource limits, instead of the first plan that fits.
+
+<Callout title="A warning worth taking seriously" variant="warning">
+  <p>
+    Every one of these techniques will produce a confident-looking number from data that violates
+    its assumptions. Nothing stops you fitting a linear regression to a curve, or an ARIMA model
+    to a non-stationary series, or reading significance into a test you ran twenty times. Knowing
+    when a method applies is the harder and more valuable half of the skill, which is why nearly
+    every chapter here spends as long on the conditions as on the calculation.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "You have every request your service handled last month, and you report the median latency. Is that descriptive or inferential?",
+      options: [
+        {
+          text: "Descriptive — it is a summary of data you completely observed.",
+          correct: true,
+          explanation:
+            "Right. With the full population in hand there is nothing to infer; the median is simply a fact about those rows. It becomes inferential the moment you use it to claim something about next month.",
+        },
+        {
+          text: "Inferential — any statistic computed from data is an inference.",
+          explanation:
+            "Not quite. Inference is specifically the step from a sample to a population you did not fully observe. Here you observed everything, so no inferential leap is being made.",
+        },
+        {
+          text: "Neither — the median is not a statistic.",
+          explanation:
+            "The median is very much a statistic. The question is only whether you are describing observed data or generalising beyond it.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "Conversion moves from 4.1% to 4.6%. Which single piece of missing information most changes how much you should trust the result?",
+      options: [
+        {
+          text: "The number of visitors in each group.",
+          correct: true,
+          explanation:
+            "Yes. Sample size drives how much random variation you should expect. The same half-point gap is noise on hundreds of visitors and a solid result on hundreds of thousands.",
+        },
+        {
+          text: "Whether the change was shipped on a Tuesday.",
+          explanation:
+            "Day-of-week effects are real and worth controlling for, but they do not determine whether a difference of this size is distinguishable from chance. Sample size does.",
+        },
+        {
+          text: "The absolute revenue figure behind the percentages.",
+          explanation:
+            "Revenue tells you whether the result matters commercially, which is a separate and later question from whether the result is real at all.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="2-4" />

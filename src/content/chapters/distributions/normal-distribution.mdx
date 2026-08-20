@@ -1,0 +1,202 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what the two parameters of a normal distribution control.</li>
+    <li>Standardise any normal value into a z-score, and interpret it.</li>
+    <li>Use the empirical rule as a fast sanity check.</li>
+    <li>Answer normal-distribution questions in Python with <code>cdf</code> and <code>ppf</code>.</li>
+  </ul>
+</Callout>
+
+The normal distribution is the one everybody has seen and rather fewer can use precisely. It
+earns its place for a specific reason: the **central limit theorem** says that sums and averages
+of many independent contributions tend toward a normal shape, whatever the shape of the individual
+contributions. Since a great many measured quantities are the accumulation of many small
+independent effects, the bell curve turns up constantly.
+
+<h2 id="shape">Shape and parameters</h2>
+
+A normal distribution is fully specified by two numbers: its mean $\mu$ and its standard
+deviation $\sigma$. The density is
+
+$$
+f(x) = \frac{1}{\sigma\sqrt{2\pi}}\, e^{-\frac{1}{2}\left(\frac{x - \mu}{\sigma}\right)^2}
+$$
+
+You will almost never evaluate that by hand, but its structure is worth reading. The exponent
+contains $(x-\mu)/\sigma$ squared — so the density depends on $x$ only through *how many standard
+deviations it sits from the mean*. Everything else is a normalising constant that makes the total
+area equal 1.
+
+Three properties follow:
+
+- It is **symmetric** about $\mu$, so mean, median and mode coincide.
+- $\mu$ **shifts** the curve; $\sigma$ **stretches** it. Changing $\sigma$ does not move the
+  centre, and changing $\mu$ does not change the width.
+- The tails extend forever in both directions. A normal model always assigns some probability to
+  absurd values — negative heights, negative latencies — which is one reason it is the wrong model
+  for strictly positive, skewed quantities.
+
+<Callout title="When the normal model is wrong" variant="warning">
+  <p>
+    Latency, income, file sizes and time-to-failure are all right-skewed and bounded below by
+    zero. Fitting a normal to them will place probability on negative values and badly understate
+    the upper tail. The usual fix is to model the <em>logarithm</em> as normal — the lognormal
+    distribution used in chapter&nbsp;2's latency example, and again in chapter&nbsp;9 for prices.
+  </p>
+</Callout>
+
+<h2 id="z-scores">Standardising with z-scores</h2>
+
+Because the density depends only on distance-in-standard-deviations, every normal question can be
+converted into a question about the **standard normal** — the one with $\mu = 0$ and $\sigma = 1$.
+The conversion is the z-score:
+
+$$
+z = \frac{x - \mu}{\sigma}
+$$
+
+A z-score of $+1.5$ means "one and a half standard deviations above the mean," and that statement
+carries the same probabilistic meaning regardless of the units involved. This is what makes
+z-scores useful for comparing across scales: a component 2.3 standard deviations above its target
+weight and a delivery 2.3 standard deviations later than its target date are equally unusual, even
+though one is grams and the other days.
+
+Historically you would look the resulting z up in a table. That table is now a function call, but
+the reasoning is unchanged.
+
+<h2 id="empirical-rule">The 68-95-99.7 rule</h2>
+
+For any normal distribution, roughly:
+
+| Within | Contains | Outside |
+| --- | --- | --- |
+| $\mu \pm 1\sigma$ | 68.3% | about 1 in 3 |
+| $\mu \pm 2\sigma$ | 95.4% | about 1 in 22 |
+| $\mu \pm 3\sigma$ | 99.7% | about 1 in 370 |
+
+This is worth memorising, because it converts a z-score into a rough probability instantly. It is
+also the origin of the three-sigma control limits in chapter&nbsp;14: if a process is stable and
+roughly normal, a point beyond three sigma happens about once in 370 samples by chance, which is
+rare enough to be worth investigating and common enough not to drown you in false alarms.
+
+<PythonCell label="The normal distribution, seen three ways">
+{`import numpy as np
+import matplotlib.pyplot as plt
+from scipy import stats
+
+# Component weights: target 500 g, process sigma 4 g.
+mu, sigma = 500.0, 4.0
+weights = stats.norm(loc=mu, scale=sigma)
+
+x = np.linspace(mu - 4 * sigma, mu + 4 * sigma, 500)
+
+fig, ax = plt.subplots()
+ax.plot(x, weights.pdf(x))
+for k, alpha in [(1, 0.35), (2, 0.22), (3, 0.12)]:
+    band = (x >= mu - k * sigma) & (x <= mu + k * sigma)
+    ax.fill_between(x[band], weights.pdf(x[band]), alpha=alpha)
+ax.set_xlabel("weight (g)")
+ax.set_ylabel("density")
+ax.set_title("68 / 95 / 99.7")
+
+for k in (1, 2, 3):
+    inside = weights.cdf(mu + k * sigma) - weights.cdf(mu - k * sigma)
+    print(f"within {k} sigma: {inside:.4%}   outside: 1 in {1 / (1 - inside):.0f}")`}
+</PythonCell>
+
+<PythonCell label="Answering real questions">
+{`# Continuing with the same distribution.
+print(f"P(weight < 494 g)        = {weights.cdf(494):.4f}")
+print(f"P(weight > 508 g)        = {1 - weights.cdf(508):.4f}")
+print(f"P(496 g < weight < 504 g) = {weights.cdf(504) - weights.cdf(496):.4f}")
+
+print()
+# The inverse question: what cutoff leaves 2.5% in each tail?
+low, high = weights.ppf(0.025), weights.ppf(0.975)
+print(f"middle 95% runs from {low:.2f} g to {high:.2f} g")
+print(f"which is mu +/- {(high - mu) / sigma:.3f} sigma  <- the famous 1.96")
+
+print()
+# Standardising by hand gives the same answer as scipy.
+x_value = 507.5
+z = (x_value - mu) / sigma
+print(f"z-score of {x_value} g = {z:.3f}")
+print(f"P(X > {x_value}) via z    = {1 - stats.norm.cdf(z):.5f}")
+print(f"P(X > {x_value}) directly = {1 - weights.cdf(x_value):.5f}")`}
+</PythonCell>
+
+That $1.96$ is worth recognising on sight. It is the z-score cutting off 2.5% in each tail, and it
+is why 95% confidence intervals in chapter&nbsp;4 are built as "estimate $\pm$ 1.96 standard
+errors."
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "A process has mean 200 and standard deviation 15. A measurement of 245 is how unusual?",
+      options: [
+        {
+          text: "z = 3.0 — beyond three sigma, expected by chance about once in 370 samples.",
+          correct: true,
+          explanation:
+            "Right: (245 − 200) / 15 = 3.0. The empirical rule puts 99.7% within three sigma, so this is a genuine outlier worth investigating — exactly the logic of a control chart.",
+        },
+        {
+          text: "z = 45 — it is 45 units above the mean.",
+          explanation:
+            "45 is the raw deviation. A z-score divides that by the standard deviation to express it in units of typical variation, which is what makes it comparable across scales.",
+        },
+        {
+          text: "Not unusual — 245 is only 22% above 200.",
+          explanation:
+            "Percentage of the mean is not the right yardstick. What matters is the deviation relative to the process's own variability, which is what sigma measures.",
+        },
+      ],
+    },
+    {
+      prompt: "Increasing σ while holding μ fixed does what to the curve?",
+      options: [
+        {
+          text: "Widens and flattens it, keeping the centre and the total area fixed.",
+          correct: true,
+          explanation:
+            "Correct. Total area must stay at 1, so spreading the distribution out necessarily lowers its peak. The centre does not move.",
+        },
+        {
+          text: "Shifts it to the right.",
+          explanation:
+            "That is what changing μ does. σ controls width only.",
+        },
+        {
+          text: "Raises the peak while keeping the width fixed.",
+          explanation:
+            "The opposite: a larger σ lowers the peak. And width is precisely what σ controls, so it cannot stay fixed.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is a normal distribution a poor model for request latency?",
+      options: [
+        {
+          text: "Latency is bounded below by zero and right-skewed; a normal is unbounded and symmetric.",
+          correct: true,
+          explanation:
+            "Exactly. A fitted normal would assign real probability to negative latency and badly understate the long right tail that p99 measurements care about. A lognormal is the usual choice.",
+        },
+        {
+          text: "Latency values are discrete, and the normal distribution is continuous.",
+          explanation:
+            "Latency measured in milliseconds is granular, but that is not the problem — the mismatch is in shape and support, not discreteness.",
+        },
+        {
+          text: "The central limit theorem does not apply to latency.",
+          explanation:
+            "The CLT is about sums and averages, and averaged latency across many requests does become approximately normal. The issue is modelling the distribution of individual latencies.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="42-50" />

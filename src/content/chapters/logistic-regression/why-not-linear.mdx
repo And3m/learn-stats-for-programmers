@@ -1,0 +1,242 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explain concretely what goes wrong when a straight line is fitted to a 0/1 outcome.</li>
+    <li>Describe the logistic function and the properties that make it the right fix.</li>
+    <li>Move between probability, odds and log-odds fluently.</li>
+  </ul>
+</Callout>
+
+Chapter&nbsp;4 predicted a quantity. This chapter predicts a **category** — specifically a binary
+one: will this loan default, is this email spam, did this patient recover. The response is 0 or 1,
+and that single change breaks linear regression in ways that cannot be patched.
+
+<h2 id="the-problem">What goes wrong</h2>
+
+Suppose you encode "defaulted" as 1 and "did not" as 0 and fit an ordinary least-squares line. It
+will produce a number. That number will be wrong in at least three distinct ways.
+
+**It predicts impossible values.** A line is unbounded. Push the predictor far enough in either
+direction and the fitted value goes above 1 or below 0, and there is no such thing as a
+probability of $-0.3$.
+
+**The errors cannot be homoskedastic.** When the outcome is 0 or 1, the residual at any point can
+only take two values, and their spread depends on the fitted probability — largest near 0.5, and
+squeezed toward zero at the extremes. Constant variance is not merely violated; it is impossible
+by construction. Every standard error from chapter&nbsp;4 is therefore unreliable.
+
+**The linear form is the wrong shape.** Real relationships between a predictor and a probability
+are usually S-shaped: below some region the outcome is nearly certain not to happen, above it
+nearly certain to happen, and the interesting change happens in between. A straight line cannot
+represent saturation at either end.
+
+<PythonCell label="Fitting a line to a binary outcome">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(2)
+
+# A binary outcome genuinely driven by x through an S-shaped relationship.
+n = 300
+x = rng.uniform(-6, 6, n)
+true_p = 1 / (1 + np.exp(-(0.9 * x)))
+y = (rng.random(n) < true_p).astype(int)
+
+# Ordinary least squares, applied where it does not belong.
+design = np.column_stack([np.ones(n), x])
+beta, *_ = np.linalg.lstsq(design, y, rcond=None)
+
+grid = np.linspace(-8, 8, 300)
+linear_fit = beta[0] + beta[1] * grid
+logistic_fit = 1 / (1 + np.exp(-(0.9 * grid)))
+
+fig, ax = plt.subplots()
+ax.scatter(x, y, s=14, alpha=0.4)
+ax.plot(grid, linear_fit, linewidth=2, label="least-squares line")
+ax.plot(grid, logistic_fit, linewidth=2, label="logistic curve")
+ax.axhline(0, linewidth=0.8)
+ax.axhline(1, linewidth=0.8)
+ax.set_xlabel("predictor")
+ax.set_ylabel("P(y = 1)")
+ax.set_title("A line leaves the unit interval; the logistic curve cannot")
+ax.legend()
+
+below = (linear_fit < 0).sum()
+above = (linear_fit > 1).sum()
+print(f"of {len(grid)} grid points, the line predicts:")
+print(f"  {below:3d} probabilities below 0   (minimum {linear_fit.min():.3f})")
+print(f"  {above:3d} probabilities above 1   (maximum {linear_fit.max():.3f})")
+print()
+print("Residual spread by fitted value - constant variance is impossible:")
+fitted = design @ beta
+resid = y - fitted
+for lo, hi in [(0.0, 0.2), (0.4, 0.6), (0.8, 1.0)]:
+    band = (fitted >= lo) & (fitted < hi)
+    if band.sum() > 5:
+        print(f"  fitted in [{lo}, {hi}):  residual sd = {resid[band].std():.4f}")`}
+</PythonCell>
+
+<h2 id="the-logistic-function">The logistic function</h2>
+
+The fix is to model not the outcome but the **probability** of the outcome, passed through a
+function that cannot leave $[0,1]$:
+
+$$
+\sigma(z) = \frac{1}{1 + e^{-z}}
+$$
+
+Its properties are exactly what the problem calls for:
+
+- It maps the whole real line into $(0, 1)$, so predictions cannot be impossible.
+- It is monotonically increasing, so "more $z$ means more probability" always holds.
+- $\sigma(0) = 0.5$, and it is symmetric: $\sigma(-z) = 1 - \sigma(z)$.
+- It saturates. Large positive or negative $z$ produces diminishing change, which is the S-shape
+  real relationships have.
+
+The model then puts the linear predictor inside it:
+
+$$
+P(y = 1 \mid x) = \sigma(\beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k)
+$$
+
+<h2 id="log-odds">Log-odds, the scale that is linear</h2>
+
+Invert the logistic function and something familiar appears. If $p = \sigma(z)$ then
+
+$$
+z = \ln\!\left(\frac{p}{1-p}\right)
+$$
+
+The quantity inside the logarithm is the **odds** from chapter&nbsp;2, and its logarithm is the
+**log-odds**, or **logit**. So the model can be written
+
+$$
+\ln\!\left(\frac{p}{1-p}\right) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k
+$$
+
+This is the sentence to remember: **logistic regression is a linear model of the log-odds.** The
+relationship with probability is curved, but on the log-odds scale it is a straight line, which is
+why all the machinery of linear models transfers.
+
+The consequence for interpretation is direct. A coefficient $\beta_j$ is the change in log-odds
+per unit of $x_j$, so $e^{\beta_j}$ is the **multiplicative** change in the odds — an odds ratio.
+That is the form you can actually say out loud, and lesson&nbsp;5.2 uses it throughout.
+
+<PythonCell label="The three scales, side by side">
+{`import numpy as np
+import matplotlib.pyplot as plt
+
+def sigmoid(z):
+    return 1 / (1 + np.exp(-z))
+
+z = np.linspace(-6, 6, 400)
+
+fig, (left, right) = plt.subplots(1, 2, figsize=(9.5, 3.4))
+left.plot(z, sigmoid(z), linewidth=2)
+left.axhline(0.5, linewidth=0.8)
+left.axvline(0, linewidth=0.8)
+left.set_xlabel("log-odds (z)")
+left.set_ylabel("probability")
+left.set_title("Curved in probability")
+
+p = np.linspace(0.005, 0.995, 400)
+right.plot(p, np.log(p / (1 - p)), linewidth=2)
+right.set_xlabel("probability")
+right.set_ylabel("log-odds")
+right.set_title("...and unbounded in log-odds")
+plt.tight_layout()
+
+print(f"{'probability':>12}{'odds':>12}{'log-odds':>12}")
+for prob in [0.01, 0.1, 0.25, 0.5, 0.75, 0.9, 0.99]:
+    odds = prob / (1 - prob)
+    print(f"{prob:>12.2f}{odds:>12.4f}{np.log(odds):>12.4f}")
+
+print()
+print("A coefficient of 0.7 multiplies the odds by exp(0.7) =", round(float(np.exp(0.7)), 4))
+print("Starting from p = 0.20 (odds 0.25), one unit of that predictor gives:")
+new_odds = 0.25 * np.exp(0.7)
+print(f"  odds {new_odds:.4f}  ->  p = {new_odds / (1 + new_odds):.4f}")
+print()
+print("Note the same coefficient moves probability by different amounts")
+print("depending on where you start - that is what 'non-linear in p' means:")
+for start in [0.05, 0.20, 0.50, 0.80, 0.95]:
+    odds = start / (1 - start) * np.exp(0.7)
+    print(f"  p {start:.2f} -> {odds / (1 + odds):.4f}   (change {odds / (1 + odds) - start:+.4f})")`}
+</PythonCell>
+
+That final table is the single most important consequence of the log-odds formulation. The same
+coefficient produces the largest change in probability near $p = 0.5$ and almost none near 0 or 1.
+"This factor increases the probability by 15 percentage points" is therefore never a complete
+statement — it depends on the baseline. "This factor doubles the odds" is complete, and is why
+odds ratios are the standard way to report these models.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why can't ordinary least squares be repaired by simply clipping predictions to [0, 1]?",
+      options: [
+        {
+          text: "Clipping hides one symptom but leaves the wrong functional form and invalid standard errors.",
+          correct: true,
+          explanation:
+            "Right. The line is still the wrong shape in the middle of the range, the errors still cannot be homoskedastic, and every p-value is still computed under assumptions that cannot hold.",
+        },
+        {
+          text: "It could — clipping is a standard and accepted fix.",
+          explanation:
+            "It is neither standard nor a fix. It patches the most visible symptom while leaving the model misspecified.",
+        },
+        {
+          text: "Because clipped predictions are no longer differentiable.",
+          explanation:
+            "True but beside the point. The objection is statistical: the model is the wrong shape and its inference is invalid, not that the clipped function is awkward to optimise.",
+        },
+      ],
+    },
+    {
+      prompt: "Logistic regression is a linear model of what?",
+      options: [
+        {
+          text: "The log-odds of the outcome.",
+          correct: true,
+          explanation:
+            "Exactly. ln(p/(1−p)) = β₀ + β₁x₁ + … The relationship with probability is S-shaped, but on the log-odds scale it is a straight line — which is what lets all the linear-model machinery carry over.",
+        },
+        {
+          text: "The probability of the outcome.",
+          explanation:
+            "That is what linear probability models attempt, and it is precisely what fails. Probability is bounded; the linear predictor is not.",
+        },
+        {
+          text: "The odds of the outcome.",
+          explanation:
+            "Close. Odds are bounded below by zero, so a linear model of odds could still predict negative values. Taking the logarithm removes that lower bound.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "A coefficient of 0.7 raises probability by how much? Why is the question incomplete?",
+      options: [
+        {
+          text: "It depends on the starting probability — the effect on p is largest near 0.5 and negligible near 0 or 1.",
+          correct: true,
+          explanation:
+            "Correct. What is constant is the effect on the odds: exp(0.7) ≈ 2.01, so the odds roughly double regardless of the baseline. That is why results are reported as odds ratios.",
+        },
+        {
+          text: "By 0.7, or 70 percentage points.",
+          explanation:
+            "Coefficients live on the log-odds scale, not the probability scale. A coefficient of 0.7 is not 70 percentage points of anything.",
+        },
+        {
+          text: "By exp(0.7) − 1 ≈ 101 percentage points, which is impossible.",
+          explanation:
+            "exp(0.7) ≈ 2.01 is a multiplier on the *odds*, not an additive change in probability. It is a valid quantity, just not the one the question asks about.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="113-114" />

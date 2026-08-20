@@ -1,0 +1,215 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Use the complement rule to turn hard questions into easy ones.</li>
+    <li>Apply the general addition and multiplication rules without assuming independence.</li>
+    <li>Pick the right rule quickly from how a question is worded.</li>
+  </ul>
+</Callout>
+
+Chapter&nbsp;2 introduced the addition and multiplication rules in their simplest forms, which
+required mutual exclusivity and independence respectively. This lesson removes both assumptions
+and adds the single most useful trick in elementary probability.
+
+<h2 id="complement-rule">The complement rule</h2>
+
+For any event $A$, either $A$ happens or it does not:
+
+$$
+P(A) + P(A^{c}) = 1 \qquad\Longleftrightarrow\qquad P(A) = 1 - P(A^{c})
+$$
+
+Trivially true, and enormously useful, because **"at least one" is almost always harder to compute
+directly than "none".**
+
+Suppose a service makes 8 independent calls to a dependency, each failing with probability 0.02.
+What is the probability at least one fails? Computing it directly means summing the probabilities
+of exactly one failure, exactly two, and so on up to eight — nine terms. From the other side it is
+one line:
+
+$$
+P(\text{at least one fails}) = 1 - P(\text{none fail}) = 1 - 0.98^{8} \approx 0.1492
+$$
+
+Roughly a 15% chance, from components each 98% reliable. That gap between component reliability
+and system reliability is one of the most consistently underestimated things in engineering.
+
+<PythonCell label="At least one, from the other side">
+{`import numpy as np
+from scipy import stats
+
+p_fail = 0.02
+
+print(" calls   P(at least one failure)")
+for n in [1, 4, 8, 20, 50, 100]:
+    direct = stats.binom.sf(0, n, p_fail)      # 1 - P(X = 0), computed exactly
+    complement = 1 - (1 - p_fail) ** n
+    print(f"  {n:4d}   {complement:.4f}   (scipy agrees: {direct:.4f})")
+
+print()
+print("Component reliability 98% -> system reliability falls fast with fan-out.")
+
+# The classic: how many people before two share a birthday, with probability > 1/2?
+def shared_birthday(n):
+    days = np.arange(365, 365 - n, -1)
+    return 1 - np.prod(days / 365)
+
+for n in [10, 23, 30, 50, 70]:
+    print(f"  {n:3d} people -> P(a shared birthday) = {shared_birthday(n):.4f}")`}
+</PythonCell>
+
+The birthday result is the standard demonstration that intuition about "at least one" is
+unreliable: 23 people is enough to make a shared birthday more likely than not, which almost
+nobody guesses.
+
+<h2 id="general-rules">Addition and multiplication, generalised</h2>
+
+Both simple rules are special cases. The general forms always apply.
+
+**General addition rule** — subtract the overlap, always:
+
+$$
+P(A \cup B) = P(A) + P(B) - P(A \cap B)
+$$
+
+When $A$ and $B$ are mutually exclusive, $P(A \cap B) = 0$ and the simple rule reappears.
+
+**General multiplication rule** — the second probability is conditional on the first:
+
+$$
+P(A \cap B) = P(A)\,P(B \mid A)
+$$
+
+When $A$ and $B$ are independent, $P(B \mid A) = P(B)$ and the simple rule reappears. Note that
+this is where **independence gets its actual definition**: two events are independent precisely
+when conditioning on one does not change the other.
+
+Drawing two aces from a deck without replacement shows the difference plainly:
+
+$$
+P(\text{two aces}) = \frac{4}{52} \times \frac{3}{51} = \frac{12}{2652} \approx 0.00452
+$$
+
+The second factor is $3/51$, not $4/52$, because one ace is gone and the deck is smaller.
+
+<h2 id="quick-reference">A quick reference table</h2>
+
+| The question says | Rule | Formula |
+| --- | --- | --- |
+| "A **and** B", independent | Multiplication | $P(A)P(B)$ |
+| "A **and** B", in general | General multiplication | $P(A)P(B \mid A)$ |
+| "A **or** B", mutually exclusive | Addition | $P(A) + P(B)$ |
+| "A **or** B", in general | General addition | $P(A) + P(B) - P(A \cap B)$ |
+| "**at least one**" | Complement | $1 - P(\text{none})$ |
+| "**none**" | Multiplication over complements | $\prod (1 - p_i)$ |
+| "**given that**" | Conditional | $P(A \cap B) / P(B)$ |
+
+The words in bold are the trigger. Training yourself to notice them is most of the skill.
+
+<h2 id="worked-examples">Worked examples</h2>
+
+<PythonCell label="Five questions, five rules">
+{`import numpy as np
+from scipy import stats
+import math
+
+print("1) A deploy pipeline has 6 independent stages, each 97% reliable.")
+print(f"   P(all pass)        = {0.97 ** 6:.4f}")
+print(f"   P(at least one fails) = {1 - 0.97 ** 6:.4f}")
+
+print()
+print("2) Draw two cards without replacement. P(both aces)?")
+print(f"   general multiplication: (4/52) x (3/51) = {(4/52) * (3/51):.5f}")
+print(f"   via combinations:       C(4,2)/C(52,2)  = {math.comb(4,2)/math.comb(52,2):.5f}")
+
+print()
+print("3) One card. P(red or face card)?")
+p_red, p_face, p_both = 26/52, 12/52, 6/52
+print(f"   general addition: {p_red:.4f} + {p_face:.4f} - {p_both:.4f} = {p_red + p_face - p_both:.4f}")
+
+print()
+print("4) 200 units, 3% defective. P(at least 1 defective in a sample of 25)?")
+print(f"   complement: 1 - 0.97^25 = {1 - 0.97 ** 25:.4f}")
+
+print()
+print("5) Two dice. P(sum is 8 | first die shows 3)?")
+print("   Given the first is 3, only the second matters, and it must be 5.")
+print(f"   P = 1/6 = {1/6:.4f}")
+print("   Note P(sum is 8) unconditionally = 5/36 =", round(5/36, 4),
+      "- conditioning changed it, so these events are not independent.")`}
+</PythonCell>
+
+That last example is the bridge to the next lesson. Conditioning on the first die changed the
+probability of the sum, which is exactly what it means for two events to be dependent — and
+handling that properly is what conditional probability is for.
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "A system makes 30 independent calls, each with a 1% failure rate. P(at least one failure)?",
+      options: [
+        {
+          text: "1 − 0.99³⁰ ≈ 0.26",
+          correct: true,
+          explanation:
+            "Right. Roughly a one-in-four chance that something fails, from components each 99% reliable. Fan-out erodes reliability much faster than intuition suggests.",
+        },
+        {
+          text: "30 × 0.01 = 0.30",
+          explanation:
+            "This adds probabilities of non-mutually-exclusive events, so it double-counts the cases where more than one call fails. It happens to be a decent approximation when p is tiny, but it is not correct and exceeds 1 once n × p > 1.",
+        },
+        {
+          text: "0.01, since each call is independent.",
+          explanation:
+            "0.01 is the probability that one particular call fails. The question asks about any of the thirty.",
+        },
+      ],
+    },
+    {
+      prompt: "When does P(A ∩ B) = P(A)P(B) hold?",
+      options: [
+        {
+          text: "Exactly when A and B are independent — that is the definition of independence.",
+          correct: true,
+          explanation:
+            "Correct. The general rule is P(A ∩ B) = P(A)P(B|A), and it collapses to the product form precisely when P(B|A) = P(B).",
+        },
+        {
+          text: "Whenever A and B are mutually exclusive.",
+          explanation:
+            "The opposite. Mutually exclusive events have P(A ∩ B) = 0, so unless one of them is impossible they are strongly dependent — knowing A happened tells you B did not.",
+        },
+        {
+          text: "Always — it is one of the axioms of probability.",
+          explanation:
+            "It is not an axiom. The axioms give you the general addition rule and the conditional definition; the product form is a consequence of independence.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is the complement rule so useful for 'at least one' questions?",
+      options: [
+        {
+          text: "'None' is a single intersection, while 'at least one' is a union of many overlapping cases.",
+          correct: true,
+          explanation:
+            "Exactly. 'None' multiplies out in one step; 'at least one' would need inclusion–exclusion across every combination. Flipping to the complement replaces a sum of many terms with one product.",
+        },
+        {
+          text: "Because it avoids needing to know the individual probabilities.",
+          explanation:
+            "You still need them — the complement computes ∏(1 − pᵢ). What it avoids is the combinatorial explosion, not the inputs.",
+        },
+        {
+          text: "Because it works even when events are dependent.",
+          explanation:
+            "The complement rule P(A) = 1 − P(Aᶜ) is always true, but computing P(none) as a product still requires independence. Dependence needs the general multiplication rule.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="63-72" />

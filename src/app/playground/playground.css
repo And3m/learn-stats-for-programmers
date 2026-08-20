@@ -1,0 +1,38 @@
+.package-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.9rem 1.1rem;
+  margin: 0 0 1.25rem;
+}
+
+.package-picker legend {
+  padding: 0 0.4rem;
+}
+
+.package-picker__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.package-picker__item:hover {
+  color: var(--foreground);
+}
+
+.package-picker__item code {
+  font-family: var(--font-mono);
+  font-size: 0.78125rem;
+}
+
+.package-picker__item input {
+  accent-color: var(--signal);
+  cursor: pointer;
+}

@@ -1,0 +1,255 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Recognise overfitting from the gap between training and test performance.</li>
+    <li>Control tree complexity with depth, leaf size and impurity thresholds.</li>
+    <li>Use cross-validation to choose a setting without touching the test set.</li>
+  </ul>
+</Callout>
+
+<h2 id="why-trees-overfit">Why trees overfit</h2>
+
+An unconstrained tree keeps splitting until every leaf is pure. On data with any overlap between
+classes — which is essentially all real data — that means carving out a leaf for individual
+observations.
+
+The result is a model with perfect training accuracy that has learned the noise as thoroughly as
+the signal. And because the noise is different in new data, performance on new data collapses.
+
+This is the clearest demonstration in the whole course of why held-out evaluation is not
+bureaucracy.
+
+<PythonCell label="The complexity curve">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.metrics import accuracy_score
+
+grains = pd.read_csv("seed-grains.csv")
+X = grains.drop(columns=["variety"])
+y = (grains["variety"] == "besni").astype(int)
+
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.3, random_state=7, stratify=y
+)
+
+depths = list(range(1, 21))
+train_scores, test_scores, leaf_counts = [], [], []
+
+for depth in depths:
+    tree = DecisionTreeClassifier(max_depth=depth, random_state=7).fit(X_train, y_train)
+    train_scores.append(accuracy_score(y_train, tree.predict(X_train)))
+    test_scores.append(accuracy_score(y_test, tree.predict(X_test)))
+    leaf_counts.append(tree.get_n_leaves())
+
+print(f"{'depth':>6}{'leaves':>8}{'train':>9}{'test':>9}{'gap':>9}")
+for depth, leaves, tr, te in zip(depths, leaf_counts, train_scores, test_scores):
+    if depth <= 8 or depth % 4 == 0:
+        print(f"{depth:>6}{leaves:>8}{tr:>9.4f}{te:>9.4f}{tr - te:>9.4f}")
+
+full = DecisionTreeClassifier(random_state=7).fit(X_train, y_train)
+print()
+print(f"unconstrained: depth {full.get_depth()}, {full.get_n_leaves()} leaves, "
+      f"train {accuracy_score(y_train, full.predict(X_train)):.4f}, "
+      f"test {accuracy_score(y_test, full.predict(X_test)):.4f}")
+
+fig, ax = plt.subplots()
+ax.plot(depths, train_scores, marker="o", markersize=3, linewidth=2, label="training")
+ax.plot(depths, test_scores, marker="o", markersize=3, linewidth=2, label="test")
+ax.set_xlabel("max_depth")
+ax.set_ylabel("accuracy")
+ax.set_title("Training accuracy climbs to 1.0; test accuracy does not follow")
+ax.legend()`}
+</PythonCell>
+
+The two curves separating is the signature of overfitting. Training accuracy marches to 1.0 while
+test accuracy peaks early and then declines — the extra depth is buying memorisation, not
+understanding.
+
+<Callout title="The best tree here is very shallow" variant="warning">
+  <p>
+    On this data a depth-1 tree — a single split, a "decision stump" — generalises about as well as
+    anything deeper. That is a genuinely useful result to sit with. When the honest answer is that
+    one threshold on one feature captures most of the available signal, a deeper model is not
+    extracting more insight; it is fitting noise with extra steps.
+  </p>
+</Callout>
+
+<h2 id="constraints">Depth, leaves and impurity</h2>
+
+scikit-learn offers several ways to stop a tree growing. They overlap, and one or two is usually
+enough.
+
+| Parameter | Effect |
+| --- | --- |
+| `max_depth` | Hard cap on how many questions can be asked in sequence |
+| `min_samples_split` | A node must hold at least this many rows to be split at all |
+| `min_samples_leaf` | Every leaf must retain at least this many rows |
+| `max_leaf_nodes` | Total leaves permitted; grown best-first |
+| `min_impurity_decrease` | A split must remove at least this much impurity to be taken |
+| `ccp_alpha` | Cost-complexity pruning: grow fully, then prune back |
+
+`min_samples_leaf` is often the most directly useful, because it speaks to the thing you actually
+care about: no prediction should rest on two observations.
+
+The last one deserves separate mention. **Cost-complexity pruning** grows the full tree and then
+removes the subtrees whose contribution does not justify their complexity, penalised by
+$\alpha$:
+
+$$
+R_\alpha(T) = R(T) + \alpha\,|\text{leaves}(T)|
+$$
+
+Pruning after the fact often beats stopping early, because a split that looks worthless can enable
+an excellent one beneath it — the cost of greedy construction, partially recovered.
+
+<PythonCell label="Pre-pruning vs. post-pruning">
+{`settings = [
+    ("unconstrained",        dict()),
+    ("max_depth=3",          dict(max_depth=3)),
+    ("min_samples_leaf=30",  dict(min_samples_leaf=30)),
+    ("max_leaf_nodes=8",     dict(max_leaf_nodes=8)),
+    ("ccp_alpha=0.005",      dict(ccp_alpha=0.005)),
+    ("ccp_alpha=0.02",       dict(ccp_alpha=0.02)),
+]
+
+print(f"{'setting':<22}{'leaves':>8}{'depth':>7}{'train':>9}{'test':>9}")
+for name, kwargs in settings:
+    tree = DecisionTreeClassifier(random_state=7, **kwargs).fit(X_train, y_train)
+    print(f"{name:<22}{tree.get_n_leaves():>8}{tree.get_depth():>7}"
+          f"{accuracy_score(y_train, tree.predict(X_train)):>9.4f}"
+          f"{accuracy_score(y_test, tree.predict(X_test)):>9.4f}")
+
+print()
+# The full cost-complexity pruning path.
+path = DecisionTreeClassifier(random_state=7).cost_complexity_pruning_path(X_train, y_train)
+alphas = path.ccp_alphas[:-1]           # drop the alpha that prunes to a single node
+sampled = alphas[:: max(1, len(alphas) // 8)]
+print("pruning path:")
+print(f"{'alpha':>10}{'leaves':>8}{'test':>9}")
+for alpha in sampled:
+    tree = DecisionTreeClassifier(random_state=7, ccp_alpha=alpha).fit(X_train, y_train)
+    print(f"{alpha:>10.5f}{tree.get_n_leaves():>8}"
+          f"{accuracy_score(y_test, tree.predict(X_test)):>9.4f}")`}
+</PythonCell>
+
+<h2 id="cross-validation">Cross-validation</h2>
+
+There is a trap in what we just did. Choosing `max_depth` by looking at test accuracy uses the
+test set to make a modelling decision — so the test set is no longer held out, and the reported
+accuracy is optimistic.
+
+**k-fold cross-validation** solves this using only the training data. Split the training set into
+$k$ folds; for each fold, train on the other $k-1$ and score on the held-out one; average the $k$
+scores. Every row serves as validation exactly once, and the test set stays untouched until the
+very end.
+
+<PythonCell label="Choosing depth without touching the test set">
+{`from sklearn.model_selection import GridSearchCV, StratifiedKFold, cross_val_score
+
+folds = StratifiedKFold(n_splits=5, shuffle=True, random_state=7)
+
+print(f"{'depth':>6}{'cv mean':>10}{'cv sd':>9}{'test (peeking)':>16}")
+for depth in [1, 2, 3, 4, 6, 8, 12, None]:
+    tree = DecisionTreeClassifier(max_depth=depth, random_state=7)
+    scores = cross_val_score(tree, X_train, y_train, cv=folds, scoring="accuracy")
+    fitted = tree.fit(X_train, y_train)
+    label = str(depth) if depth else "None"
+    print(f"{label:>6}{scores.mean():>10.4f}{scores.std():>9.4f}"
+          f"{accuracy_score(y_test, fitted.predict(X_test)):>16.4f}")
+
+print()
+search = GridSearchCV(
+    DecisionTreeClassifier(random_state=7),
+    {
+        "max_depth": [1, 2, 3, 4, 5, 6, 8, 10, None],
+        "min_samples_leaf": [1, 5, 15, 30, 60],
+    },
+    cv=folds,
+    scoring="accuracy",
+    n_jobs=1,
+)
+search.fit(X_train, y_train)
+
+print(f"best parameters : {search.best_params_}")
+print(f"best CV accuracy: {search.best_score_:.4f}")
+print(f"test accuracy   : {accuracy_score(y_test, search.best_estimator_.predict(X_test)):.4f}")
+print()
+print("The test set was used exactly once, at the end, as an unbiased estimate.")`}
+</PythonCell>
+
+The cross-validation column and the test column broadly agree, which is what you want to see. When
+they diverge sharply, either the test set is small enough to be noisy or something has leaked
+between the two.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Training accuracy is 1.00 and test accuracy is 0.83. What is happening?",
+      options: [
+        {
+          text: "Overfitting — the tree memorised the training data, including its noise.",
+          correct: true,
+          explanation:
+            "Right. The gap between the two numbers is the diagnostic. The fix is to constrain complexity: cap the depth, require larger leaves, or prune.",
+        },
+        {
+          text: "Underfitting — the model is too simple to capture the pattern.",
+          explanation:
+            "Underfitting shows as *both* scores being poor. Perfect training accuracy is the opposite symptom.",
+        },
+        {
+          text: "The test set must be drawn from a different distribution.",
+          explanation:
+            "Possible in general, but here the split was random and stratified from one dataset. Excess model flexibility is the simpler and correct explanation.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is choosing max_depth by looking at test accuracy a problem?",
+      options: [
+        {
+          text: "It leaks the test set into a modelling decision, so the final number is optimistic.",
+          correct: true,
+          explanation:
+            "Exactly. Once the test set influences a choice it is no longer held out. Cross-validation on the training data lets you tune without spending it.",
+        },
+        {
+          text: "It is not a problem, provided you only try a few values.",
+          explanation:
+            "The bias is smaller with fewer candidates but it is still there, and it grows with every value you compare.",
+        },
+        {
+          text: "Because test accuracy is always lower than cross-validation accuracy.",
+          explanation:
+            "There is no such systematic relationship. The issue is the leak, not the level.",
+        },
+      ],
+    },
+    {
+      prompt: "What does cost-complexity pruning do that limiting max_depth does not?",
+      options: [
+        {
+          text: "It grows the full tree first, so it can keep a weak split that enables a strong one below it.",
+          correct: true,
+          explanation:
+            "Correct — it partially recovers from the greediness of tree building. Early stopping cuts off that subtree before its value can be discovered.",
+        },
+        {
+          text: "It guarantees the globally optimal tree.",
+          explanation:
+            "It does not. Finding the optimal tree remains intractable; pruning only improves on greedy construction, it does not replace it.",
+        },
+        {
+          text: "It removes features rather than splits.",
+          explanation:
+            "Pruning removes subtrees. A feature disappears from the model only as a side effect of every split using it being pruned away.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="164-174" />

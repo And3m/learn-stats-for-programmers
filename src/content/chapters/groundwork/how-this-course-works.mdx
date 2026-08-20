@@ -1,0 +1,138 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Know what to expect from every lesson that follows.</li>
+    <li>Use the Python runtime deliberately rather than accidentally.</li>
+    <li>Know what this course leaves out, and where to go for it.</li>
+  </ul>
+</Callout>
+
+<h2 id="shape-of-a-lesson">The shape of a lesson</h2>
+
+Every lesson follows the same rhythm, on purpose. Once you know the shape you can skim the parts
+you already have and slow down where you do not.
+
+1. **Learning objectives.** Three or so statements of what you should be able to do afterwards.
+   Worth reading twice — they are also a decent self-test on the way out.
+2. **The idea, in words.** Why the technique exists and what problem it solves. No formula yet.
+3. **The idea, in symbols.** The formula, with every symbol named, and where it comes from when
+   the derivation is short enough to be illuminating rather than tedious.
+4. **The idea, in code.** A runnable cell you can edit. The code is always short enough to read
+   in one pass; where a real analysis would need forty lines of setup, the setup is generated for
+   you and the interesting part is left visible.
+5. **The conditions.** When the technique applies, and — more usefully — how it fails when it
+   does not. This section is often the longest.
+6. **A check.** Two or three questions with explanations for every option, right and wrong.
+
+The right-hand rail lists the sections and cites the corresponding pages in the book this
+syllabus follows, if you want a second treatment of the same material.
+
+<h2 id="the-runtime">About the Python runtime</h2>
+
+The interpreter is real CPython 3.14 compiled to WebAssembly. It is not a simulation and not a
+sandboxed subset — `import this` works, and so does everything else you would expect.
+
+A few practical notes:
+
+- **It downloads on demand.** The interpreter is roughly 12&nbsp;MB, and each library is more on
+  top: NumPy is small, SciPy and scikit-learn are not. Nothing downloads until you press
+  **Start Python**, and lessons only load the libraries they actually use.
+- **It is per-page.** Leaving a lesson tears the interpreter down. Coming back starts it again,
+  though the browser cache makes the second start much faster.
+- **`plt.show()` is optional.** Any figure left open when a cell finishes is captured and rendered
+  automatically, using the colours of whichever theme you are reading in. Switch between light and
+  dark and re-run a plot to see it.
+- **Files are virtual.** Lessons that need data get a CSV written into an in-memory filesystem
+  before the first run, so `pd.read_csv("payments.csv")` just works. Writing files is fine too;
+  they vanish when you leave.
+
+<PythonCell label="The runtime is a real interpreter">
+{`import sys
+import platform
+
+print(sys.version)
+print("platform:", platform.platform())
+
+# The filesystem is real, in memory.
+with open("scratch.txt", "w") as handle:
+    handle.write("written from the browser\\n")
+
+print("read back:", open("scratch.txt").read().strip())`}
+</PythonCell>
+
+<Callout title="Two libraries you will not see">
+  <p>
+    <strong>seaborn</strong> is not available in this environment, so every chart here is plain
+    Matplotlib. And <strong>yfinance</strong> cannot reach the network from inside the browser
+    sandbox, so chapters&nbsp;7 and&nbsp;9 use a bundled price history instead of downloading one.
+    The techniques are identical; only the data source differs.
+  </p>
+</Callout>
+
+<h2 id="not-covered">What this course does not cover</h2>
+
+Being explicit about the boundary is more useful than pretending there isn't one.
+
+- **Deep learning.** No neural networks, no backpropagation, no transformers. Different toolkit,
+  different course.
+- **Causal inference.** This course will teach you to fit a regression and read its coefficients
+  honestly. It will not teach you to claim those coefficients are causal — that needs
+  instrumental variables, difference-in-differences, and a great deal of care about study design.
+- **Bayesian modelling.** Bayes' theorem appears in chapter&nbsp;3 as a rule for updating
+  probabilities, which it is. Full Bayesian inference — priors, posteriors, MCMC — does not.
+- **Big data engineering.** Everything here fits comfortably in memory. Spark, Dask and the rest
+  are orthogonal concerns.
+- **Proofs.** Derivations appear when they build intuition. Measure-theoretic foundations do not.
+
+What you should have at the end is the ability to pick the right technique for a decision, apply
+it correctly in Python, check that its assumptions hold, and state the conclusion with the right
+amount of confidence — no more and no less.
+
+<Quiz
+  questions={[
+    {
+      prompt: "Why does nothing download until you press Start Python?",
+      options: [
+        {
+          text: "Because the interpreter and libraries are tens of megabytes, and readers should not pay for that just to read prose.",
+          correct: true,
+          explanation:
+            "Exactly. The runtime is opt-in per lesson, and each lesson loads only the libraries it declares.",
+        },
+        {
+          text: "Because the code needs your permission to run on a server.",
+          explanation:
+            "There is no server. Everything executes locally in your browser tab; nothing you type is transmitted anywhere.",
+        },
+        {
+          text: "Because the browser blocks WebAssembly until a user gesture.",
+          explanation:
+            "Browsers impose no such restriction on WebAssembly. The gate is deliberate on our side, purely about bandwidth.",
+        },
+      ],
+    },
+    {
+      prompt: "Which of these is explicitly out of scope for this course?",
+      options: [
+        {
+          text: "Causal inference — claiming that a regression coefficient reflects cause rather than association.",
+          correct: true,
+          explanation:
+            "Right. You will learn to fit and interpret regressions carefully; establishing causation needs study designs this course does not cover.",
+        },
+        {
+          text: "Checking whether a model's assumptions hold.",
+          explanation:
+            "The opposite — that is one of the most emphasised parts of the course. Chapter 4 devotes a whole lesson to it.",
+        },
+        {
+          text: "Simulation when the mathematics is intractable.",
+          explanation:
+            "That is chapter 9, on Monte Carlo methods, and very much in scope.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="11-15" />

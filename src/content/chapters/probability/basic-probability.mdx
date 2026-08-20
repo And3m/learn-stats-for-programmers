@@ -1,0 +1,228 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>State the classical definition of probability and the two conditions it quietly assumes.</li>
+    <li>Get the denominator right for compound experiments such as rolling two dice.</li>
+    <li>Distinguish theoretical, empirical and subjective probability.</li>
+    <li>Convert between probability and odds in both directions.</li>
+  </ul>
+</Callout>
+
+Probability is the language every later chapter is written in. Regression coefficients come with
+p-values; classifiers emit probabilities; control charts are built from tail areas; Monte Carlo
+simulation is nothing but sampling from distributions. It is worth being unusually careful here,
+because errors made at this level propagate everywhere.
+
+<h2 id="defining-probability">Successes over outcomes</h2>
+
+For an experiment whose outcomes are all equally likely, the probability of an event $A$ is
+
+$$
+P(A) = \frac{\text{number of outcomes in which } A \text{ occurs}}{\text{total number of possible outcomes}}
+$$
+
+Flip a fair coin and call heads: one favourable outcome out of two, so $P(\text{heads}) = 1/2$.
+Draw one card from a standard deck and ask for a face card: there are twelve face cards — jack,
+queen and king in each of four suits — out of fifty-two, so
+
+$$
+P(\text{face card}) = \frac{12}{52} = \frac{3}{13} \approx 0.2308
+$$
+
+Every probability obeys two rules that follow immediately from the definition: $0 \le P(A) \le 1$,
+and the probabilities of all distinct outcomes of an experiment sum to exactly 1.
+
+<Callout title="Two assumptions hiding in that fraction" variant="warning">
+  <p>
+    The formula is only valid when <strong>every outcome is equally likely</strong>. That holds
+    for fair coins and fair dice. It emphatically does not hold for "it either rains tomorrow or
+    it does not, so the probability of rain is one half" — a genuinely common error. The second
+    assumption is that everyone agrees what counts as a success, which is less trivial than it
+    sounds when the event is something like "the deployment was a failure".
+  </p>
+</Callout>
+
+<h2 id="the-denominator">Getting the denominator right</h2>
+
+The numerator is usually easy. The denominator is where people go wrong, and it goes wrong in a
+predictable way: by counting *distinguishable results* instead of *equally likely outcomes*.
+
+Roll two six-sided dice and ask for the probability of double sixes. It is tempting to reason
+that the sum can be anything from 2 to 12 — eleven possibilities — and that double sixes is one
+of them, giving $1/11$. That is wrong, because those eleven sums are not equally likely. There is
+exactly one way to roll a 2 and six ways to roll a 7.
+
+Count the underlying outcomes instead. Each die independently shows one of six faces, so there
+are $6 \times 6 = 36$ equally likely outcomes, and exactly one of them is double sixes:
+
+$$
+P(\text{double six}) = \frac{1}{36} \approx 0.0278
+$$
+
+The same care is needed when drawing without replacement. Draw two cards from a deck: the first
+draw has 52 possibilities, the second has only 51, so there are $52 \times 51 = 2652$ ordered
+outcomes. Forgetting that the deck shrank is the most common slip in the whole subject.
+
+Independence is the other place intuition misfires. If you have flipped a fair coin and seen
+heads, the probability of heads on the next flip is still $1/2$. If thirty-five rolls of two dice
+have produced no double six, the probability on the thirty-sixth is still $1/36$. Nothing about
+the coin or the dice has changed. The law of large numbers says the *proportion* of heads
+converges to one half over many flips; it says nothing whatsoever about the next flip, and
+believing otherwise is the gambler's fallacy.
+
+<PythonCell label="Empirical probability converges — the next flip does not care">
+{`import numpy as np
+
+rng = np.random.default_rng(0)
+
+# 36 possible outcomes when rolling two dice; simulate a lot of them.
+rolls = rng.integers(1, 7, size=(200_000, 2))
+double_six = np.all(rolls == 6, axis=1)
+
+print(f"simulated P(double six) = {double_six.mean():.5f}")
+print(f"theoretical             = {1/36:.5f}")
+
+# The gambler's fallacy, tested directly: after a run of non-double-sixes,
+# is the next roll any more likely to be a double six?
+after_drought = double_six[1:][~double_six[:-1]]
+print()
+print(f"P(double six | previous roll was not) = {after_drought.mean():.5f}")`}
+</PythonCell>
+
+<h2 id="three-types">Theoretical, empirical and subjective</h2>
+
+The dice calculations above are **theoretical** probabilities: derived from an assumed model of
+equally likely outcomes, without collecting any data. They are exact, conditional on the model
+being right.
+
+**Empirical** probability comes from observation instead:
+
+$$
+P(A) = \frac{\text{number of times } A \text{ was observed}}{\text{number of observations}}
+$$
+
+If it rained on 75 of the last 365 days, the empirical probability of rain on an arbitrary day is
+$75/365 \approx 0.205$. This requires no model of *why* it rains — but it inherits every bias in
+how the observations were collected, and it is only as stable as the process that generated them.
+The simulation cell above computed an empirical probability and compared it to a theoretical one;
+they agreed to three decimal places, which is exactly what the law of large numbers predicts.
+
+**Subjective** probability is a considered degree of belief: a forecaster saying there is a 40%
+chance a project slips, an engineer putting 10% on a particular root cause. It is not arbitrary —
+a well-calibrated expert's subjective probabilities are genuinely informative — but it varies
+between people and cannot be checked against a single outcome. Chapter&nbsp;13 uses subjective
+three-point estimates as the raw material for project scheduling.
+
+<h2 id="odds">Odds, and why gamblers prefer them</h2>
+
+Odds express the same information as a ratio of favourable to unfavourable outcomes rather than
+favourable to total. If $P$ is a probability, the odds in favour are
+
+$$
+\text{odds} = \frac{P}{1 - P}
+\qquad\text{and conversely}\qquad
+P = \frac{\text{odds}}{1 + \text{odds}}
+$$
+
+A probability of $0.75$ is odds of $3$, usually written 3:1 in favour. A probability of $0.2$ is
+odds of $0.25$, or 1:4.
+
+This is not merely a betting convention. Odds are what logistic regression actually models — its
+coefficients are changes in *log*-odds, and exponentiating one gives an odds ratio. Chapter&nbsp;5
+depends entirely on being comfortable moving between the two scales, so it is worth getting the
+conversion into your fingers now.
+
+<PythonCell label="Probability and odds, both directions">
+{`import numpy as np
+
+def to_odds(p):
+    return p / (1 - p)
+
+def to_probability(odds):
+    return odds / (1 + odds)
+
+for p in [0.05, 0.2, 0.5, 0.75, 0.9, 0.99]:
+    odds = to_odds(p)
+    print(f"P = {p:5.2f}   odds = {odds:8.3f}   log-odds = {np.log(odds):7.3f}")
+
+# The round trip is exact.
+print()
+print("recovered:", [round(to_probability(to_odds(p)), 10) for p in [0.05, 0.2, 0.75]])`}
+</PythonCell>
+
+Notice the log-odds column. It is symmetric around zero — a probability of $0.5$ gives log-odds
+of exactly $0$, and $p$ and $1-p$ give log-odds equal in magnitude and opposite in sign. That
+symmetry, plus the fact that log-odds range over the whole real line while probabilities are
+trapped in $[0, 1]$, is precisely why logistic regression works on that scale.
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "Two fair six-sided dice are rolled. What is the probability that the sum is 7?",
+      options: [
+        {
+          text: "6/36",
+          correct: true,
+          explanation:
+            "Right. Of the 36 equally likely outcomes, six sum to 7: (1,6), (2,5), (3,4), (4,3), (5,2) and (6,1). That makes 7 the most likely sum, which is why it is the pivotal number in craps.",
+        },
+        {
+          text: "1/11",
+          explanation:
+            "This is the classic denominator error. There are eleven possible sums (2 through 12), but they are not equally likely, so you cannot divide by 11. Count the 36 underlying outcomes instead.",
+        },
+        {
+          text: "1/36",
+          explanation:
+            "1/36 is the probability of one specific ordered outcome, such as double sixes. Six different outcomes give a sum of 7.",
+        },
+      ],
+    },
+    {
+      prompt: "A probability of 0.8 corresponds to what odds in favour?",
+      options: [
+        {
+          text: "4",
+          correct: true,
+          explanation:
+            "Correct: 0.8 / (1 − 0.8) = 0.8 / 0.2 = 4, usually written 4:1 in favour. Four favourable outcomes for every unfavourable one.",
+        },
+        {
+          text: "0.8",
+          explanation:
+            "That is the probability itself. Odds are favourable-to-unfavourable, so you divide by 1 − P rather than by the total.",
+        },
+        {
+          text: "5",
+          explanation:
+            "5 would be 1 / (1 − 0.8) — the reciprocal of the failure probability, not the odds. The numerator must be P, not 1.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "You have flipped a fair coin nine times and seen nine heads. What is the probability of heads on the tenth flip?",
+      options: [
+        {
+          text: "1/2 — the flips are independent.",
+          correct: true,
+          explanation:
+            "Right. The coin has no memory. The law of large numbers says the long-run proportion converges to one half, but it makes no claim at all about the next flip.",
+        },
+        {
+          text: "Less than 1/2 — tails is overdue.",
+          explanation:
+            "This is the gambler's fallacy. Nothing about the coin changed across nine flips, so nothing about the tenth flip changed either.",
+        },
+        {
+          text: "Greater than 1/2 — nine heads is evidence the coin is biased.",
+          explanation:
+            "That reasoning is legitimate if the coin's fairness is genuinely in doubt — and chapter 3's conditional probability tools handle it. But the question stipulates a fair coin, and given fairness the answer is exactly 1/2.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="17-22" />

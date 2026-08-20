@@ -1,0 +1,194 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Say what autocorrelation and partial autocorrelation each measure.</li>
+    <li>Read an ACF/PACF pair to suggest AR and MA orders.</li>
+    <li>Avoid over-reading spikes that are within the confidence band.</li>
+  </ul>
+</Callout>
+
+<h2 id="autocorrelation">Autocorrelation</h2>
+
+The **autocorrelation function** measures how correlated a series is with itself $k$ steps back:
+
+$$
+\rho_k = \frac{\operatorname{Cov}(y_t,\, y_{t-k})}{\operatorname{Var}(y_t)}
+$$
+
+$\rho_0$ is always 1. After that the values tell you how long the series remembers. A slow decay
+means long memory — or, more often, a trend that has not been differenced away. A sharp cutoff
+after lag $q$ is the signature of a **moving average** process of order $q$.
+
+<h2 id="partial">Partial autocorrelation</h2>
+
+The ACF has a blind spot. If today depends on yesterday and yesterday on the day before, then
+today correlates with two days ago *through* yesterday — even with no direct relationship. The
+ACF cannot distinguish direct influence from inherited influence.
+
+The **partial** autocorrelation at lag $k$ measures the correlation between $y_t$ and $y_{t-k}$
+**after removing the effect of all the intervening lags**. It is exactly the "holding the others
+fixed" idea from multiple regression, applied to a series' own past.
+
+A sharp cutoff in the PACF after lag $p$ is the signature of an **autoregressive** process of
+order $p$.
+
+<h2 id="reading-the-plots">Reading the plots</h2>
+
+The classic identification table:
+
+| | ACF | PACF |
+| --- | --- | --- |
+| **AR(p)** | Decays gradually | **Cuts off after lag p** |
+| **MA(q)** | **Cuts off after lag q** | Decays gradually |
+| **ARMA(p,q)** | Decays | Decays |
+| **Non-stationary** | Stays high for many lags | Large spike at lag 1 |
+
+The shaded band on the plots is a 95% confidence interval around zero, roughly $\pm 1.96/\sqrt{n}$.
+Spikes inside it are consistent with noise.
+
+<Callout title="Expect false positives" variant="warning">
+  <p>
+    At the 95% level, about one lag in twenty will poke outside the band by chance. On a 30-lag
+    plot that is one or two spikes you should ignore. Treat an isolated spike at lag 17 as noise
+    unless you have a reason to expect structure there; treat a spike at the seasonal period as
+    real.
+  </p>
+</Callout>
+
+<PythonCell label="ACF and PACF on the raw and differenced series">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
+
+traffic = pd.read_csv("web-traffic.csv", parse_dates=["date"]).set_index("date")
+traffic.index.freq = "D"
+sessions = traffic["sessions"]
+
+fig, axes = plt.subplots(2, 2, figsize=(9.5, 5.8))
+
+plot_acf(sessions, lags=30, ax=axes[0, 0])
+axes[0, 0].set_title("ACF - original (non-stationary)")
+plot_pacf(sessions, lags=30, ax=axes[0, 1], method="ywm")
+axes[0, 1].set_title("PACF - original")
+
+seasonal_diff = sessions.diff(7).dropna()
+plot_acf(seasonal_diff, lags=30, ax=axes[1, 0])
+axes[1, 0].set_title("ACF - after seasonal differencing")
+plot_pacf(seasonal_diff, lags=30, ax=axes[1, 1], method="ywm")
+axes[1, 1].set_title("PACF - after seasonal differencing")
+
+plt.tight_layout()
+
+print("The top row is the picture of a non-stationary series: autocorrelation")
+print("stays high for thirty lags because every point shares the same trend.")`}
+</PythonCell>
+
+<PythonCell label="The numbers behind the plots">
+{`from statsmodels.tsa.stattools import acf, pacf
+
+autocorr = acf(seasonal_diff, nlags=21)
+partial = pacf(seasonal_diff, nlags=21, method="ywm")
+band = 1.96 / np.sqrt(len(seasonal_diff))
+
+print(f"95% band: +/- {band:.4f}   (n = {len(seasonal_diff):,})")
+print()
+print(f"{'lag':>4}{'ACF':>10}{'':>3}{'PACF':>10}")
+for lag in range(1, 22):
+    a_flag = "*" if abs(autocorr[lag]) > band else " "
+    p_flag = "*" if abs(partial[lag]) > band else " "
+    print(f"{lag:>4}{autocorr[lag]:>10.4f}{a_flag:>2}{'':>1}{partial[lag]:>10.4f}{p_flag:>2}")
+
+print()
+print("* marks a value outside the 95% band.")
+print()
+print("Lags 1-6 are essentially zero. Lag 7 is large and negative in both.")
+print("That negative spike at exactly the seasonal period is the classic")
+print("signature of a seasonal MA(1) term - Q = 1 with s = 7 - which is")
+print("what seasonal differencing induces. It is not a defect; it is what")
+print("tells you the model needs that term.")`}
+</PythonCell>
+
+The reading is clean here: after seasonal differencing, lags 1 through 6 sit inside the band, and
+lag 7 is a large negative spike in both ACF and PACF. That points at a seasonal moving-average
+term with $s = 7$, and essentially no non-seasonal structure — a strong hint toward the model
+fitted in the next lesson.
+
+<Callout title="ACF and PACF suggest; they do not decide" variant="warning">
+  <p>
+    Textbook ACF/PACF patterns are clean because textbook data is simulated from a known process.
+    Real plots are ambiguous more often than not. Use them to narrow the candidates to two or
+    three, then choose between those with AIC and residual diagnostics — which is exactly how the
+    next lesson proceeds.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "The PACF cuts off sharply after lag 2 while the ACF decays gradually. What does that suggest?",
+      options: [
+        {
+          text: "An AR(2) process.",
+          correct: true,
+          explanation:
+            "Right — a PACF cutoff at lag p with a decaying ACF is the AR(p) signature. The mirror image, an ACF cutoff with a decaying PACF, indicates MA(q).",
+        },
+        {
+          text: "An MA(2) process.",
+          explanation:
+            "That is the reverse pattern: MA(q) shows a sharp *ACF* cutoff at lag q with a gradually decaying PACF.",
+        },
+        {
+          text: "A non-stationary series needing differencing.",
+          explanation:
+            "Non-stationarity shows as an ACF that stays high across many lags without decaying. Here the ACF does decay, so the series is behaving.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is a partial autocorrelation different from an ordinary one?",
+      options: [
+        {
+          text: "It removes the influence of the intervening lags, isolating the direct relationship.",
+          correct: true,
+          explanation:
+            "Exactly — the same 'holding the others fixed' idea as a multiple-regression coefficient, applied to the series' own past. Without it you cannot tell direct dependence from inherited dependence.",
+        },
+        {
+          text: "It is computed on the differenced series rather than the original.",
+          explanation:
+            "Both are computed on whatever series you hand them. The difference is conditioning on intermediate lags, not which series is used.",
+        },
+        {
+          text: "It uses only part of the data, hence 'partial'.",
+          explanation:
+            "Both use the full series. 'Partial' refers to partialling out the intermediate lags, as in partial correlation generally.",
+        },
+      ],
+    },
+    {
+      prompt: "On a 30-lag ACF plot, one isolated spike at lag 19 pokes just outside the band. What should you do?",
+      options: [
+        {
+          text: "Most likely ignore it — at 95% confidence, roughly one lag in twenty exceeds the band by chance.",
+          correct: true,
+          explanation:
+            "Correct. Isolated spikes at arbitrary lags are usually noise. A spike at the seasonal period, or a run of consecutive significant lags, is a different matter.",
+        },
+        {
+          text: "Add an MA(19) term to the model.",
+          explanation:
+            "That would fit noise with 19 parameters. Model complexity should follow from structure you have a reason to expect, not from a single borderline spike.",
+        },
+        {
+          text: "Difference the series again to remove it.",
+          explanation:
+            "Differencing addresses trend and drift, not an isolated high-lag spike — and over-differencing carries its own costs.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="205-207" />

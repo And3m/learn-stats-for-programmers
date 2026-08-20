@@ -1,0 +1,210 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Decide, from the wording of a problem, whether order matters.</li>
+    <li>Compute permutations and combinations, and explain the factor that separates them.</li>
+    <li>Use combinations to answer probability questions about unordered selections.</li>
+  </ul>
+</Callout>
+
+<h2 id="does-order-matter">Does order matter?</h2>
+
+Almost every counting mistake in elementary probability comes from getting one question wrong:
+**does order matter?**
+
+- A four-digit PIN. `1234` and `4321` are different PINs. Order matters.
+- A five-card poker hand. The same five cards dealt in any sequence is the same hand. Order does
+  not matter.
+- The first three finishers in a race. Gold, silver and bronze are distinct positions. Order
+  matters.
+- A three-person committee drawn from a team. Being on the committee is being on the committee.
+  Order does not matter.
+
+Get this wrong and your answer is off by a factor of $k!$ — which for a five-card hand is 120, so
+it is not a subtle error.
+
+<h2 id="permutations">Permutations</h2>
+
+A permutation is an **ordered** arrangement. The number of ways to arrange $k$ items chosen from
+$n$ distinct items, without repetition, is
+
+$$
+P(n, k) = \frac{n!}{(n-k)!}
+$$
+
+The reasoning is the multiplication rule: $n$ choices for the first slot, $n-1$ for the second
+(one item is used up), down to $n-k+1$ for the last. Writing that product as a ratio of
+factorials is just notational convenience.
+
+Three medals among eight runners: $P(8,3) = \frac{8!}{5!} = 8 \times 7 \times 6 = 336$ possible
+podiums.
+
+When $k = n$ the formula gives $n!$ — the number of ways to arrange everything. Eight runners can
+finish in $8! = 40{,}320$ different orders.
+
+<Callout title="Repetition changes the formula" variant="warning">
+  <p>
+    The formula above assumes items are used up as they are chosen. If repetition is allowed — as
+    with a PIN, where digits can repeat — the count is simply <em>n<sup>k</sup></em>. A four-digit
+    PIN has 10<sup>4</sup> = 10,000 possibilities, not P(10,4) = 5,040. Read the problem carefully
+    for whether items are replaced.
+  </p>
+</Callout>
+
+<h2 id="combinations">Combinations</h2>
+
+A combination is an **unordered** selection. Since every unordered group of $k$ items can be
+arranged in $k!$ different orders, and permutations count each of those separately, you get
+combinations by dividing the permutation count by $k!$:
+
+$$
+C(n, k) = \binom{n}{k} = \frac{n!}{k!\,(n-k)!} = \frac{P(n,k)}{k!}
+$$
+
+Three people from a team of eight: $\binom{8}{3} = \frac{336}{6} = 56$ possible committees, versus
+336 possible podiums from the same eight people. The 6 is $3!$ — the number of orderings of each
+group of three that a podium distinguishes and a committee does not.
+
+Two properties are worth internalising:
+
+$$
+\binom{n}{k} = \binom{n}{n-k}
+\qquad\text{and}\qquad
+\binom{n}{0} = \binom{n}{n} = 1
+$$
+
+The first says choosing which 3 people join is the same as choosing which 5 stay out. The second
+is the convention that there is exactly one way to choose nothing, and one way to choose
+everything — which matters when these terms appear inside a sum, as they do in the binomial
+distribution in chapter&nbsp;3.
+
+<h2 id="in-python">Counting in Python</h2>
+
+Both functions live in the standard library's `math` module; SciPy's versions accept arrays,
+which is occasionally useful.
+
+<PythonCell label="Permutations and combinations">
+{`import math
+from scipy.special import comb, perm
+
+n, k = 8, 3
+
+print(f"permutations P({n},{k}) = {math.perm(n, k):,}   (order matters)")
+print(f"combinations C({n},{k}) = {math.comb(n, k):,}   (order does not)")
+print(f"ratio                   = {math.perm(n, k) // math.comb(n, k)} = {k}! = {math.factorial(k)}")
+
+print()
+print("A five-card poker hand from 52 cards:")
+hands = math.comb(52, 5)
+print(f"  C(52,5) = {hands:,} distinct hands")
+print(f"  P(52,5) = {math.perm(52, 5):,} ordered deals — {math.factorial(5)}x more")
+
+print()
+print("SciPy's vectorised versions agree:")
+print(" ", comb(8, [0, 1, 2, 3, 4]).astype(int), "<- C(8,k) for k = 0..4")
+print(" ", perm(8, [0, 1, 2, 3]).astype(int), "<- P(8,k) for k = 0..3")`}
+</PythonCell>
+
+Now put combinations to work on an actual probability question. The probability of being dealt a
+flush — five cards all of the same suit — is the number of flush hands divided by the number of
+hands. There are 4 suits, and $\binom{13}{5}$ ways to pick five cards within a suit.
+
+<PythonCell label="The probability of a flush">
+{`import math
+
+total_hands = math.comb(52, 5)
+flush_hands = 4 * math.comb(13, 5)          # 4 suits, C(13,5) hands within each
+
+# Straight flushes are usually counted separately, so subtract them:
+straight_flushes = 4 * 10                    # 10 starting ranks per suit (A-5 through 10-A)
+plain_flushes = flush_hands - straight_flushes
+
+print(f"all hands       {total_hands:>10,}")
+print(f"flush hands     {flush_hands:>10,}")
+print(f"  of which straight flushes {straight_flushes}")
+print(f"plain flushes   {plain_flushes:>10,}")
+print()
+print(f"P(flush, incl. straight flush) = {flush_hands / total_hands:.6f}  (1 in {total_hands / flush_hands:.0f})")
+print(f"P(plain flush)                 = {plain_flushes / total_hands:.6f}  (1 in {total_hands / plain_flushes:.0f})")`}
+</PythonCell>
+
+<Callout title="Why this matters later">
+  <p>
+    Combinations are not a party trick. The binomial coefficient is the first term of the binomial
+    distribution in chapter&nbsp;3 — it counts <em>how many ways</em> k successes can be arranged
+    among n trials, which is exactly the "does order matter" question applied to a sequence of
+    coin flips. If you are comfortable here, that formula will look obvious rather than arbitrary.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "A team of 10 must pick a president, a treasurer and a secretary — three different people. How many ways?",
+      options: [
+        {
+          text: "P(10,3) = 720",
+          correct: true,
+          explanation:
+            "Right. The three roles are distinct, so order matters: 10 × 9 × 8 = 720. Alice as president and Bob as treasurer is a different outcome from the reverse.",
+        },
+        {
+          text: "C(10,3) = 120",
+          explanation:
+            "That counts which three people are chosen but not who gets which role. Multiply by 3! = 6 to assign the roles, and you get back to 720.",
+        },
+        {
+          text: "10³ = 1000",
+          explanation:
+            "That would allow the same person to hold more than one role. The question says three different people, so items are used up as they are chosen.",
+        },
+      ],
+    },
+    {
+      prompt: "Why does C(n,k) equal C(n, n−k)?",
+      options: [
+        {
+          text: "Choosing which k items to include is the same act as choosing which n−k to leave out.",
+          correct: true,
+          explanation:
+            "Exactly. Every selection of 3 from 8 corresponds to exactly one selection of the 5 that were not picked, so the two counts must match.",
+        },
+        {
+          text: "Because factorials are symmetric.",
+          explanation:
+            "The algebra does work out, since k! (n−k)! is symmetric in k and n−k. But the combinatorial reason — include versus exclude — is what makes it obvious rather than coincidental.",
+        },
+        {
+          text: "It does not, in general — it only holds when k = n/2.",
+          explanation:
+            "It holds for every k. C(8,3) = C(8,5) = 56, for instance.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "You compute a probability using permutations where the problem actually calls for combinations. By what factor is your denominator wrong?",
+      options: [
+        {
+          text: "k! — permutations count each unordered group k! times.",
+          correct: true,
+          explanation:
+            "Right, and the factor grows fast: for a five-card hand it is 5! = 120. If both numerator and denominator use the same convention consistently the error cancels, which is why mixing conventions is the real danger.",
+        },
+        {
+          text: "n! — the total number of arrangements.",
+          explanation:
+            "n! is the number of ways to arrange all n items, which is not the relationship between P(n,k) and C(n,k). The dividing factor is k!.",
+        },
+        {
+          text: "(n−k)! — the items left over.",
+          explanation:
+            "(n−k)! appears in both formulas and cancels between them. What separates permutations from combinations is exactly k!.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="23-30" />

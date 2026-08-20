@@ -1,0 +1,263 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Explain what the smoothing parameter α controls.</li>
+    <li>Extend smoothing to handle trend and seasonality.</li>
+    <li>Choose between exponential smoothing and ARIMA on practical grounds.</li>
+  </ul>
+</Callout>
+
+Exponential smoothing comes at forecasting from a different direction than ARIMA. Instead of
+modelling the correlation structure, it takes a weighted average of the past where the weights
+decay exponentially — recent observations count more, and older ones fade smoothly rather than
+being cut off.
+
+The family is simpler, much faster to fit, and frequently just as accurate.
+
+<h2 id="ses">Simple exponential smoothing</h2>
+
+The level is updated each period as a blend of the new observation and the previous level:
+
+$$
+\ell_t = \alpha y_t + (1 - \alpha)\ell_{t-1}, \qquad 0 < \alpha < 1
+$$
+
+Unrolling that recursion shows where the name comes from:
+
+$$
+\ell_t = \alpha y_t + \alpha(1-\alpha) y_{t-1} + \alpha(1-\alpha)^2 y_{t-2} + \cdots
+$$
+
+Every past observation contributes, with geometrically decaying weight. $\alpha$ near 1 means the
+forecast tracks the data closely and reacts fast; $\alpha$ near 0 means it is smooth and slow. It
+is a responsiveness-versus-stability dial, and it is fitted from the data rather than chosen by
+hand.
+
+The critical limitation: SES has **no trend and no seasonality**, so its forecast is a flat line
+at the current level. Useful for a stable series, useless for this one.
+
+<PythonCell label="What alpha does">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from statsmodels.tsa.holtwinters import SimpleExpSmoothing, ExponentialSmoothing
+import warnings
+
+warnings.filterwarnings("ignore")
+
+traffic = pd.read_csv("web-traffic.csv", parse_dates=["date"]).set_index("date")
+traffic.index.freq = "D"
+sessions = traffic["sessions"]
+recent = sessions.iloc[-120:]
+
+fig, ax = plt.subplots(figsize=(9.5, 4))
+ax.plot(recent.index, recent.values, linewidth=0.8, alpha=0.5, label="actual")
+
+for alpha in [0.05, 0.3, 0.8]:
+    smoothed = SimpleExpSmoothing(recent).fit(smoothing_level=alpha, optimized=False)
+    ax.plot(recent.index, smoothed.fittedvalues, linewidth=1.8, label=f"alpha = {alpha}")
+
+ax.set_title("Small alpha smooths; large alpha chases")
+ax.legend(fontsize=8)
+
+print("Weight given to each of the last few observations:")
+print(f"{'alpha':>7}" + "".join(f"{f'y[t-{k}]':>10}" for k in range(5)))
+for alpha in [0.05, 0.3, 0.8]:
+    weights = [alpha * (1 - alpha) ** k for k in range(5)]
+    print(f"{alpha:>7.2f}" + "".join(f"{w:>10.4f}" for w in weights))
+
+print()
+print("With alpha = 0.8, yesterday alone carries 80% of the weight.")
+print("With alpha = 0.05, the forecast barely notices any single day.")`}
+</PythonCell>
+
+<h2 id="holt">Adding a trend</h2>
+
+**Holt's linear method** adds a second smoothed component for the slope:
+
+$$
+\ell_t = \alpha y_t + (1-\alpha)(\ell_{t-1} + b_{t-1})
+$$
+$$
+b_t = \beta(\ell_t - \ell_{t-1}) + (1-\beta) b_{t-1}
+$$
+
+and forecasts $h$ steps ahead as $\ell_t + h\,b_t$ — a straight line from the current level at the
+current slope.
+
+That linear extrapolation is dangerous at long horizons: a slope estimated from recent data,
+extended twenty periods out, produces confident nonsense. **Damped trend** fixes it by shrinking
+the slope with each step ahead using a damping parameter $\phi < 1$, so the forecast flattens out.
+It is very often the better default.
+
+<h2 id="holt-winters">Holt-Winters and seasonality</h2>
+
+Add a third smoothed component for the seasonal pattern and you have **Holt-Winters**, with three
+equations and three parameters ($\alpha$, $\beta$, $\gamma$) plus the seasonal period $m$.
+
+Seasonality can be additive or multiplicative, on the same criterion as in lesson&nbsp;7.1: does
+the seasonal swing stay a constant size, or does it grow with the level?
+
+<PythonCell label="The whole family, compared">
+{`horizon = 28
+train, test = sessions[:-horizon], sessions[-horizon:]
+
+def mape(actual, predicted):
+    actual, predicted = np.asarray(actual), np.asarray(predicted)
+    return float(np.mean(np.abs((actual - predicted) / actual)) * 100)
+
+specifications = {
+    "SES (level only)":            dict(trend=None, seasonal=None),
+    "Holt (level + trend)":        dict(trend="add", seasonal=None),
+    "Holt, damped":                dict(trend="add", damped_trend=True, seasonal=None),
+    "Holt-Winters additive":       dict(trend="add", seasonal="add", seasonal_periods=7),
+    "Holt-Winters multiplicative": dict(trend="add", seasonal="mul", seasonal_periods=7),
+    "Holt-Winters damped":         dict(trend="add", damped_trend=True,
+                                        seasonal="add", seasonal_periods=7),
+}
+
+seasonal_naive = np.array([train.iloc[-7 + (i % 7)] for i in range(horizon)])
+
+print(f"{'model':<30}{'MAPE %':>9}{'AIC':>12}")
+print(f"{'seasonal naive (benchmark)':<30}{mape(test, seasonal_naive):>9.2f}{'-':>12}")
+
+fits = {}
+for name, kwargs in specifications.items():
+    fitted = ExponentialSmoothing(train, **kwargs).fit()
+    fits[name] = fitted
+    print(f"{name:<30}{mape(test, fitted.forecast(horizon)):>9.2f}{fitted.aic:>12.1f}")
+
+print()
+best = fits["Holt-Winters additive"]
+print("Fitted smoothing parameters for Holt-Winters additive:")
+for key in ["smoothing_level", "smoothing_trend", "smoothing_seasonal"]:
+    value = best.params.get(key)
+    if value is not None:
+        print(f"  {key:<20} {value:.4f}")`}
+</PythonCell>
+
+The progression is instructive. SES is hopeless because it cannot represent the weekly cycle at
+all. Adding trend helps a little. Adding seasonality transforms the result. And the seasonal-naive
+benchmark remains stubbornly competitive.
+
+<PythonCell label="Forecast, decomposed into its parts">
+{`fitted = ExponentialSmoothing(
+    train, trend="add", seasonal="add", seasonal_periods=7
+).fit()
+
+forecast = fitted.forecast(horizon)
+
+fig, axes = plt.subplots(2, 1, figsize=(9.5, 6))
+
+context = sessions[-(horizon + 70):]
+axes[0].plot(context.index, context.values, linewidth=1, label="actual")
+axes[0].plot(forecast.index, forecast.values, linewidth=2, label="Holt-Winters")
+axes[0].plot(test.index, seasonal_naive, linewidth=1.5, linestyle="--", label="seasonal naive")
+axes[0].axvline(train.index[-1], linewidth=1)
+axes[0].set_title("Four-week forecast")
+axes[0].legend(fontsize=8)
+
+axes[1].plot(fitted.level.index[-200:], fitted.level.values[-200:], linewidth=1.5, label="level")
+axes[1].plot(fitted.season.index[-200:], fitted.season.values[-200:], linewidth=1, label="seasonal")
+axes[1].set_title("The internal components the model tracks")
+axes[1].legend(fontsize=8)
+plt.tight_layout()
+
+errors = test.values - forecast.values
+print(f"MAPE  {mape(test, forecast):.2f}%")
+print(f"MAE   {np.abs(errors).mean():,.0f} sessions")
+print(f"RMSE  {np.sqrt((errors ** 2).mean()):,.0f} sessions")
+print(f"bias  {errors.mean():+,.0f} sessions   (systematic over- or under-forecasting)")`}
+</PythonCell>
+
+<h2 id="choosing">Choosing a model</h2>
+
+| Prefer | When |
+| --- | --- |
+| **Exponential smoothing** | You need something fast and robust; the series has clear trend and seasonality; you have limited history; you want few parameters to explain |
+| **ARIMA** | The autocorrelation structure is genuinely complex; you need explicit modelling of that structure; you want to include external regressors |
+| **Neither** | A naive or seasonal-naive rule already performs comparably — as it does here |
+
+Two practical notes. Exponential smoothing fits in a fraction of a second where seasonal ARIMA
+takes seconds, which matters when you are forecasting thousands of series. And the two families
+overlap mathematically: every exponential smoothing model has an equivalent state-space form, and
+several correspond exactly to particular ARIMA models. They are less rival philosophies than
+different parameterisations of similar ideas.
+
+<Callout title="A default worth adopting">
+  <p>
+    Start with seasonal naive. Then try damped Holt-Winters. Only reach for ARIMA if neither is
+    good enough and you have evidence the residual autocorrelation structure is worth modelling.
+    This ordering costs minutes and prevents a great deal of wasted effort.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "What does a small α mean in simple exponential smoothing?",
+      options: [
+        {
+          text: "The forecast changes slowly — old observations retain substantial weight.",
+          correct: true,
+          explanation:
+            "Right. α is the weight on the newest observation, so a small α produces a smooth, stable forecast that reacts sluggishly to genuine changes.",
+        },
+        {
+          text: "Only the most recent observations matter.",
+          explanation:
+            "That is a *large* α, which puts most of the weight on the latest value and tracks the data closely.",
+        },
+        {
+          text: "The model has a stronger trend component.",
+          explanation:
+            "α controls the level only. The trend has its own parameter, β, in Holt's method.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is a damped trend usually preferable to an undamped one?",
+      options: [
+        {
+          text: "An undamped linear trend extrapolated far ahead produces confidently unrealistic forecasts.",
+          correct: true,
+          explanation:
+            "Exactly. Damping shrinks the slope with each step so the forecast flattens, which matches how real trends behave far better than indefinite linear growth.",
+        },
+        {
+          text: "Damping makes the model fit the training data better.",
+          explanation:
+            "It typically fits slightly worse in-sample. The gain is in out-of-sample accuracy at longer horizons, which is what you actually want.",
+        },
+        {
+          text: "Damping is required whenever seasonality is present.",
+          explanation:
+            "The two are independent. You can have seasonality with or without damping, and damping is about the trend component alone.",
+        },
+      ],
+    },
+    {
+      prompt: "Simple exponential smoothing performs terribly on this dataset. Why?",
+      options: [
+        {
+          text: "It models only the level, so its forecast is a flat line — it cannot represent the weekly cycle or the trend.",
+          correct: true,
+          explanation:
+            "Correct. The series has a strong weekly pattern and a clear upward trend, and SES has no component for either. That is precisely why Holt and Holt-Winters exist.",
+        },
+        {
+          text: "Because α was not optimised.",
+          explanation:
+            "statsmodels optimises α by default. No value of α lets a level-only model produce a seasonal forecast.",
+        },
+        {
+          text: "Because the series is non-stationary.",
+          explanation:
+            "Exponential smoothing does not require stationarity — unlike ARIMA, it handles trend directly through its own components. The problem is that SES lacks those components.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="215-221" />

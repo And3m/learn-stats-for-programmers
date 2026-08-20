@@ -1,0 +1,264 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Compute conditional probabilities and say what "given" does to the sample space.</li>
+    <li>Test independence formally rather than by intuition.</li>
+    <li>Use natural frequencies to make base-rate problems obvious.</li>
+    <li>Apply Bayes' theorem and explain why its answers feel wrong.</li>
+  </ul>
+</Callout>
+
+This is the most consequential lesson in the chapter, and the one where trained professionals
+demonstrably get the wrong answer. The mathematics is a single line of algebra. The difficulty is
+entirely in the intuition.
+
+<h2 id="the-idea">Narrowing the sample space</h2>
+
+The conditional probability of $A$ **given** $B$ is
+
+$$
+P(A \mid B) = \frac{P(A \cap B)}{P(B)}, \qquad P(B) > 0
+$$
+
+What the "given" does is **shrink the world**. You are no longer asking about all possible
+outcomes; you are asking about the outcomes in which $B$ occurred, and asking what fraction of
+those also have $A$. The denominator changes from 1 to $P(B)$, and everything else follows.
+
+Roll two dice. Unconditionally, $P(\text{sum} = 8) = 5/36$. Now condition on the first die showing
+a 3: the world has shrunk from 36 outcomes to 6, and exactly one of those six gives a sum of 8. So
+$P(\text{sum} = 8 \mid \text{first} = 3) = 1/6$. The condition changed the answer, which is
+precisely what dependence means.
+
+<Callout title="The most common error in the subject" variant="pitfall">
+  <p>
+    <strong>P(A | B) is not P(B | A).</strong> The probability that someone is coughing given they
+    have a cold is very high. The probability that someone has a cold given they are coughing is
+    much lower. Confusing the two — the "prosecutor's fallacy" — has produced wrongful
+    convictions, bad medical decisions and a great many misread dashboards.
+  </p>
+</Callout>
+
+<h2 id="independence">Conditional probability and independence</h2>
+
+Independence now has a precise test rather than a vibe. Events $A$ and $B$ are independent if and
+only if
+
+$$
+P(A \mid B) = P(A) \qquad\Longleftrightarrow\qquad P(A \cap B) = P(A)\,P(B)
+$$
+
+In words: knowing $B$ happened tells you nothing new about $A$. Checking this on real data is a
+one-line comparison, and doing it is a good habit — assumed independence is behind a large
+fraction of underestimated risks.
+
+<PythonCell label="Testing independence directly">
+{`import numpy as np
+
+rng = np.random.default_rng(17)
+n = 400_000
+
+# Two dice.
+d1 = rng.integers(1, 7, n)
+d2 = rng.integers(1, 7, n)
+
+a = (d1 + d2) == 8          # A: the sum is 8
+b = d1 == 3                 # B: the first die is a 3
+c = d2 == 5                 # C: the second die is a 5
+
+def report(name, x, y):
+    p_x, p_y = x.mean(), y.mean()
+    p_joint = (x & y).mean()
+    p_cond = p_joint / p_y
+    verdict = "independent" if abs(p_joint - p_x * p_y) < 0.002 else "DEPENDENT"
+    print(f"{name}")
+    print(f"   P(A)        = {p_x:.4f}")
+    print(f"   P(A | B)    = {p_cond:.4f}")
+    print(f"   P(A)P(B)    = {p_x * p_y:.4f}   P(A and B) = {p_joint:.4f}   -> {verdict}")
+
+report("sum=8  vs  first die = 3", a, b)
+print()
+report("second die = 5  vs  first die = 3", c, b)`}
+</PythonCell>
+
+The first pair is dependent — knowing the first die is a 3 raises the chance of a sum of 8 from
+$5/36 \approx 0.139$ to $1/6 \approx 0.167$. The second pair is independent, as two separate dice
+must be.
+
+<h2 id="natural-frequencies">The natural-frequency shortcut</h2>
+
+Here is the classic problem. A disease affects 1 in 1,000 people. A test detects it correctly 99%
+of the time, and has a 5% false-positive rate. **You test positive. What is the probability you
+have the disease?**
+
+Most people, including most doctors when asked, answer somewhere between 95% and 99%. The correct
+answer is about 2%.
+
+The reason the correct answer is so hard to feel is that it depends on a base rate the question
+mentions only in passing. Restate the problem in **counts** rather than probabilities and it
+becomes almost obvious:
+
+Imagine 100,000 people.
+
+- **100** actually have the disease (1 in 1,000).
+  - Of those, **99** test positive (99% sensitivity).
+- **99,900** do not have it.
+  - Of those, **4,995** test positive anyway (5% false positive rate).
+
+So $99 + 4995 = 5094$ people test positive, and only 99 of them are ill:
+
+$$
+P(\text{ill} \mid \text{positive}) = \frac{99}{5094} \approx 0.0194
+$$
+
+The false positives swamp the true positives, because there are a thousand times more healthy
+people to draw them from. Nothing about the test is bad; the base rate is simply doing most of
+the work.
+
+<PythonCell label="Natural frequencies, and what changes the answer">
+{`prevalence = 0.001
+sensitivity = 0.99          # P(positive | ill)
+false_positive = 0.05       # P(positive | healthy)
+
+population = 100_000
+ill = population * prevalence
+healthy = population - ill
+
+true_positives = ill * sensitivity
+false_positives = healthy * false_positive
+all_positives = true_positives + false_positives
+
+print(f"population        {population:>10,.0f}")
+print(f"  ill            {ill:>10,.0f}   -> {true_positives:>8,.0f} test positive")
+print(f"  healthy        {healthy:>10,.0f}   -> {false_positives:>8,.0f} test positive")
+print(f"  total positive {all_positives:>10,.0f}")
+print()
+print(f"P(ill | positive) = {true_positives / all_positives:.4f}")
+
+print()
+print("The base rate does almost all the work:")
+for rate in [0.001, 0.01, 0.05, 0.20, 0.50]:
+    tp = rate * sensitivity
+    fp = (1 - rate) * false_positive
+    print(f"  prevalence {rate:5.1%}  ->  P(ill | positive) = {tp / (tp + fp):.4f}")`}
+</PythonCell>
+
+Screening a general population and testing someone who already has symptoms are therefore
+completely different problems, even with an identical test. That is not a statistical subtlety —
+it is the whole reason targeted testing works and indiscriminate screening often does not.
+
+<h2 id="bayes">Bayes' theorem</h2>
+
+The formula behind the counting above follows from the definition of conditional probability
+applied in both directions. Since $P(A \cap B)$ can be written as either $P(A \mid B)P(B)$ or
+$P(B \mid A)P(A)$, setting them equal and rearranging gives
+
+$$
+P(A \mid B) = \frac{P(B \mid A)\,P(A)}{P(B)}
+$$
+
+and expanding the denominator over all the ways $B$ can happen gives the form you actually use:
+
+$$
+P(A \mid B) = \frac{P(B \mid A)\,P(A)}{P(B \mid A)\,P(A) + P(B \mid A^{c})\,P(A^{c})}
+$$
+
+The vocabulary is worth knowing because it recurs: $P(A)$ is the **prior** (what you believed
+before), $P(B \mid A)$ is the **likelihood** (how well the evidence fits the hypothesis), and
+$P(A \mid B)$ is the **posterior** (what you should believe now).
+
+<PythonCell label="Bayes, and updating twice">
+{`def bayes(prior, likelihood, false_alarm):
+    """P(hypothesis | evidence) from prior, P(E|H) and P(E|not H)."""
+    numerator = likelihood * prior
+    return numerator / (numerator + false_alarm * (1 - prior))
+
+prior = 0.001
+posterior = bayes(prior, 0.99, 0.05)
+print(f"after one positive test:  {posterior:.4f}")
+
+# A second, independent positive test uses the first posterior as its prior.
+second = bayes(posterior, 0.99, 0.05)
+print(f"after a second positive:  {second:.4f}")
+third = bayes(second, 0.99, 0.05)
+print(f"after a third positive:   {third:.4f}")
+
+print()
+print("A negative result updates in the other direction:")
+negative = bayes(prior, 1 - 0.99, 1 - 0.05)   # P(negative | ill), P(negative | healthy)
+print(f"after one negative test:  {negative:.6f}")`}
+</PythonCell>
+
+Two independent positive tests take you from 2% to about 28%; three take you past 88%. This is the
+practical logic of confirmatory testing, and it is the same updating machinery that sits behind
+spam filters, medical triage and A/B test interpretation.
+
+<Quiz
+  questions={[
+    {
+      prompt:
+        "A test is 99% accurate for a disease affecting 1 in 1,000 people. You test positive. Roughly what is P(disease)?",
+      options: [
+        {
+          text: "About 2%.",
+          correct: true,
+          explanation:
+            "Right. With 100 ill people per 100,000 and a 5% false-positive rate applied to the other 99,900, false positives outnumber true positives roughly 50 to 1. The base rate dominates.",
+        },
+        {
+          text: "About 99%.",
+          explanation:
+            "This confuses P(positive | ill) with P(ill | positive) — the prosecutor's fallacy. The test's accuracy says nothing on its own about how likely you are to be ill.",
+        },
+        {
+          text: "About 50%.",
+          explanation:
+            "A reasonable-feeling compromise, but the arithmetic does not support it. Write out the counts per 100,000 and the answer falls out.",
+        },
+      ],
+    },
+    {
+      prompt: "Two events are independent if and only if…",
+      options: [
+        {
+          text: "P(A | B) = P(A) — conditioning on B does not change A's probability.",
+          correct: true,
+          explanation:
+            "Correct, and equivalently P(A ∩ B) = P(A)P(B). This is the definition, not a consequence, and it gives you a one-line empirical test.",
+        },
+        {
+          text: "P(A ∩ B) = 0 — they cannot happen together.",
+          explanation:
+            "That is mutual exclusivity, which is the opposite of independence: if A rules out B, then knowing A tells you a great deal about B.",
+        },
+        {
+          text: "P(A) = P(B) — they are equally likely.",
+          explanation:
+            "Equal probabilities say nothing about whether the events inform each other. Two dice both showing 3 are equally likely and independent; a sum and its first die are equally... well, neither.",
+        },
+      ],
+    },
+    {
+      prompt: "In Bayes' theorem, what role does the prior play?",
+      options: [
+        {
+          text: "It encodes what you believed before seeing the evidence, and it can dominate the answer.",
+          correct: true,
+          explanation:
+            "Exactly — that is the whole lesson of the screening example. The same test result means something very different depending on whether you are screening a population or testing someone symptomatic.",
+        },
+        {
+          text: "It is a correction factor that keeps the posterior between 0 and 1.",
+          explanation:
+            "The denominator handles normalisation. The prior carries genuine information: the base rate of the hypothesis before evidence arrives.",
+        },
+        {
+          text: "It is only needed when the test is unreliable.",
+          explanation:
+            "The screening example used a 99%-sensitive test and the prior still drove the answer from 99% down to 2%. A good test does not make the base rate irrelevant.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="72-78" />

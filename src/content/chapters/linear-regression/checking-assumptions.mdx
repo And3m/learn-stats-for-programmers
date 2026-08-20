@@ -1,0 +1,273 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Name the four assumptions ordinary least squares rests on.</li>
+    <li>Diagnose each one from residual plots and formal tests.</li>
+    <li>Decide what to do when an assumption fails.</li>
+  </ul>
+</Callout>
+
+Everything in the previous lesson — the standard errors, the p-values, the intervals — is
+conditional on assumptions that nothing in the fitting process checks. statsmodels will report a
+p-value of $10^{-13}$ for a model whose assumptions are comprehensively violated. Checking them is
+your job, and it is the part of regression most often skipped.
+
+<h2 id="the-four">The four assumptions</h2>
+
+Remembered as **LINE**, minus the redundant letter:
+
+1. **Linearity.** The relationship between predictors and response really is linear (in the
+   coefficients). If it is curved, the fitted line is systematically wrong in a pattern.
+2. **Independence.** Observations do not influence one another. Violated by time series, by
+   repeated measurements on the same subject, and by clustered sampling.
+3. **Homoskedasticity.** The error variance is constant across the range of fitted values. When
+   it fans out, the standard errors are wrong — usually too small.
+4. **Normality of residuals.** The errors are approximately normally distributed. Needed for
+   exact p-values and intervals in small samples; the central limit theorem makes this
+   increasingly forgiving as $n$ grows.
+
+Note what is **not** on the list. The predictors need not be normally distributed. They need not
+be uncorrelated with each other — that is multicollinearity, an interpretability problem rather
+than a validity one. And $y$ itself need not be normal; it is the *residuals* that matter.
+
+<h2 id="residual-plots">Residual plots</h2>
+
+Four plots diagnose almost everything. Learn to read them and you rarely need a formal test to
+know something is wrong.
+
+- **Residuals vs. fitted.** Should be a structureless horizontal band. Curvature means the
+  linearity assumption failed. A funnel means heteroskedasticity.
+- **Q-Q plot of residuals.** Points on the diagonal means normal. Ends curving away means heavy
+  tails; a systematic bow means skew.
+- **Scale-location.** The square root of standardised residuals against fitted values, with a flat
+  trend if variance is constant. Often clearer than the first plot for spotting a funnel.
+- **Residuals vs. leverage.** Identifies points with the influence to move the fit on their own.
+  Cook's distance above about $4/n$ deserves a look.
+
+<PythonCell label="The four diagnostic plots">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import statsmodels.api as sm
+import statsmodels.formula.api as smf
+from scipy import stats
+
+cars = pd.read_csv("fuel-efficiency.csv")
+model = smf.ols("city_kpl ~ engine_litres + weight_kg + power_kw", data=cars).fit()
+
+influence = model.get_influence()
+standardised = influence.resid_studentized_internal
+leverage = influence.hat_matrix_diag
+cooks = influence.cooks_distance[0]
+
+fig, axes = plt.subplots(2, 2, figsize=(9.5, 6.5))
+
+axes[0, 0].scatter(model.fittedvalues, model.resid, s=12, alpha=0.6)
+axes[0, 0].axhline(0, linewidth=1)
+axes[0, 0].set_xlabel("fitted")
+axes[0, 0].set_ylabel("residual")
+axes[0, 0].set_title("Residuals vs fitted")
+
+stats.probplot(standardised, dist="norm", plot=axes[0, 1])
+axes[0, 1].set_title("Normal Q-Q")
+
+axes[1, 0].scatter(model.fittedvalues, np.sqrt(np.abs(standardised)), s=12, alpha=0.6)
+axes[1, 0].set_xlabel("fitted")
+axes[1, 0].set_ylabel("sqrt |std. residual|")
+axes[1, 0].set_title("Scale-location")
+
+axes[1, 1].scatter(leverage, standardised, s=12, alpha=0.6)
+axes[1, 1].axhline(0, linewidth=1)
+axes[1, 1].set_xlabel("leverage")
+axes[1, 1].set_ylabel("std. residual")
+axes[1, 1].set_title("Residuals vs leverage")
+
+plt.tight_layout()
+
+threshold = 4 / len(cars)
+flagged = np.where(cooks > threshold)[0]
+print(f"Cook's distance threshold 4/n = {threshold:.4f}")
+print(f"{len(flagged)} influential observations flagged:")
+print(cars.loc[flagged[:8], ["model_id", "engine_litres", "weight_kg", "city_kpl"]].to_string(index=False))`}
+</PythonCell>
+
+The Q-Q plot is the striking one. The upper tail departs sharply from the diagonal: a group of
+observations has residuals far larger than a normal distribution would produce. Those are the
+hybrids, and they also appear in the Cook's distance list.
+
+<h2 id="formal-tests">Formal tests</h2>
+
+Plots are better for diagnosis; tests are better for reporting. Three cover the assumptions that
+can be tested directly.
+
+- **Jarque-Bera** or **Omnibus** for normality of residuals. A small p-value rejects normality.
+- **Breusch-Pagan** or **White** for homoskedasticity. A small p-value indicates the variance
+  depends on the predictors.
+- **Durbin-Watson** for autocorrelation. Ranges 0 to 4; near 2 means no autocorrelation, below 1.5
+  suggests positive autocorrelation.
+
+<Callout title="Tests get more sensitive as n grows" variant="warning">
+  <p>
+    With 100,000 observations, a normality test will reject essentially any real dataset, because
+    no real data is exactly normal and the test has the power to detect it. That does not mean the
+    model is unusable. Read the test alongside the plot and ask how <em>badly</em> the assumption
+    fails, not merely whether it fails.
+  </p>
+</Callout>
+
+<PythonCell label="All three tests">
+{`from statsmodels.stats.stattools import jarque_bera, durbin_watson
+from statsmodels.stats.diagnostic import het_breuschpagan
+
+jb_stat, jb_p, skew, kurtosis = jarque_bera(model.resid)
+print("NORMALITY (Jarque-Bera)")
+print(f"  statistic {jb_stat:10.2f}   p {jb_p:.3e}")
+print(f"  skew      {skew:10.3f}   (0 for a normal distribution)")
+print(f"  kurtosis  {kurtosis:10.3f}   (3 for a normal distribution)")
+print(f"  verdict:  {'residuals are NOT normal' if jb_p < 0.05 else 'consistent with normal'}")
+
+print()
+bp_stat, bp_p, f_stat, f_p = het_breuschpagan(model.resid, model.model.exog)
+print("HOMOSKEDASTICITY (Breusch-Pagan)")
+print(f"  statistic {bp_stat:10.2f}   p {bp_p:.4f}")
+print(f"  verdict:  {'variance is NOT constant' if bp_p < 0.05 else 'consistent with constant variance'}")
+
+print()
+dw = durbin_watson(model.resid)
+print("INDEPENDENCE (Durbin-Watson)")
+print(f"  statistic {dw:10.3f}   (2.0 means no autocorrelation)")
+print(f"  verdict:  {'no autocorrelation' if 1.5 < dw < 2.5 else 'autocorrelation present'}")`}
+</PythonCell>
+
+The verdict on this model: independence is fine, and normality fails badly — skew near 2.8 and
+kurtosis near 15, against 0 and 3 for a normal distribution. That is not a marginal failure to be
+waved through.
+
+<h2 id="what-to-do">What to do when one fails</h2>
+
+| Assumption | Symptom | Options |
+| --- | --- | --- |
+| Linearity | Curvature in residuals vs. fitted | Add a polynomial or interaction term; transform a predictor; use a non-linear model |
+| Independence | Durbin-Watson far from 2 | Model the dependence explicitly — time-series methods (chapter&nbsp;7) or mixed models |
+| Homoskedasticity | Funnel shape; small Breusch-Pagan p | Transform the response (log is common); use robust (HC) standard errors; weighted least squares |
+| Normality | Q-Q tails depart; small Jarque-Bera p | Often ignorable at large $n$; otherwise transform the response, or find the omitted variable causing the outliers |
+
+The last row is the interesting one here, because the residual skew has an identifiable cause
+rather than being a distributional quirk. The hybrids are a distinct group the model has no
+predictor for. Give it one, and the problem largely resolves — which is the general lesson:
+**non-normal residuals are frequently a symptom of a missing variable, not of a need to transform
+anything.**
+
+<PythonCell label="Fixing it by adding the missing variable">
+{`# The hybrids are identifiable: far more efficient than their size predicts.
+predicted = model.fittedvalues
+cars = cars.assign(is_hybrid=(model.resid > 4.0).astype(int))
+print(f"flagged as hybrid: {cars['is_hybrid'].sum()} of {len(cars)}")
+
+better = smf.ols(
+    "city_kpl ~ engine_litres + weight_kg + power_kw + is_hybrid", data=cars
+).fit()
+
+jb_before = jarque_bera(model.resid)
+jb_after = jarque_bera(better.resid)
+
+print()
+print(f"{'':<22}{'before':>12}{'after':>12}")
+print(f"{'R-squared':<22}{model.rsquared:>12.4f}{better.rsquared:>12.4f}")
+print(f"{'residual sd (kpl)':<22}{np.sqrt(model.scale):>12.4f}{np.sqrt(better.scale):>12.4f}")
+print(f"{'residual skew':<22}{jb_before[2]:>12.3f}{jb_after[2]:>12.3f}")
+print(f"{'residual kurtosis':<22}{jb_before[3]:>12.3f}{jb_after[3]:>12.3f}")
+print(f"{'Jarque-Bera p':<22}{jb_before[1]:>12.2e}{jb_after[1]:>12.2e}")
+
+print()
+print("Coefficients move toward the values the data were generated from:")
+truth = {"Intercept": 24.5, "engine_litres": -1.85, "weight_kg": -0.0042, "power_kw": 0.021}
+print(f"{'term':<16}{'before':>11}{'after':>11}{'truth':>11}")
+for name, value in truth.items():
+    print(f"{name:<16}{model.params[name]:>11.5f}{better.params[name]:>11.5f}{value:>11.5f}")`}
+</PythonCell>
+
+Adding one indicator variable lifts $R^2$ substantially, cuts the residual standard deviation, and
+pulls every coefficient back toward the values the data were actually generated from. The
+diagnostics were not a formality — they were pointing at a real, fixable defect in the model.
+
+<Callout title="Flagging outliers by their residuals is circular" variant="pitfall">
+  <p>
+    The cell above identifies hybrids using residuals from the very model being corrected, which
+    would be indefensible in real analysis: you can always improve a fit by adding an indicator for
+    the points it fits worst. It is legitimate here <em>only</em> because we know from how the data
+    were generated that a genuine subgroup exists. In practice, find the variable in the world —
+    a powertrain column, a customer segment, a manufacturing line — rather than in the residuals.
+  </p>
+</Callout>
+
+<Quiz
+  questions={[
+    {
+      prompt: "Residuals vs. fitted shows a clear funnel widening to the right. Which assumption failed?",
+      options: [
+        {
+          text: "Homoskedasticity — the error variance grows with the fitted value.",
+          correct: true,
+          explanation:
+            "Right. The usual responses are a log transform of the response, robust (HC) standard errors, or weighted least squares. Coefficients stay unbiased; it is the standard errors that are wrong.",
+        },
+        {
+          text: "Linearity — the relationship must be curved.",
+          explanation:
+            "Curvature shows as a systematic bend in the residual band, not as a change in its width. A funnel is about spread.",
+        },
+        {
+          text: "Normality — the residuals are skewed.",
+          explanation:
+            "Skew shows in the Q-Q plot as a systematic bow. A funnel in residuals vs. fitted is specifically about non-constant variance.",
+        },
+      ],
+    },
+    {
+      prompt:
+        "With 200,000 observations, a Jarque-Bera test rejects normality at p < 10⁻¹⁵. What should you do?",
+      options: [
+        {
+          text: "Look at the Q-Q plot and judge how badly it deviates — at that sample size the test rejects almost any real data.",
+          correct: true,
+          explanation:
+            "Correct. Statistical significance and practical importance diverge sharply at large n, and the central limit theorem makes inference robust to mild non-normality anyway. The plot answers the question the test cannot.",
+        },
+        {
+          text: "Abandon linear regression entirely.",
+          explanation:
+            "An overreaction. At 200,000 observations the sampling distributions of the coefficients are approximately normal regardless, so inference remains broadly sound.",
+        },
+        {
+          text: "Log-transform the response automatically.",
+          explanation:
+            "A transform is a reasonable response to genuine skew, but applying it reflexively because a test rejected changes the meaning of every coefficient for possibly no benefit. Diagnose first.",
+        },
+      ],
+    },
+    {
+      prompt: "Which of these is NOT an assumption of ordinary least squares?",
+      options: [
+        {
+          text: "The predictors are normally distributed.",
+          correct: true,
+          explanation:
+            "Right — predictors can have any distribution at all, including binary indicators. It is the residuals whose distribution matters, and only for exact small-sample inference.",
+        },
+        {
+          text: "The residuals have constant variance.",
+          explanation:
+            "That is homoskedasticity, and it is very much an assumption. Violating it invalidates the standard errors.",
+        },
+        {
+          text: "Observations are independent of one another.",
+          explanation:
+            "Independence is assumed, and it is the assumption most obviously violated by time-series data — which is why chapter 7 exists.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="105-110" />

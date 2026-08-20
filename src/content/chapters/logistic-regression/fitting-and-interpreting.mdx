@@ -1,0 +1,234 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>Fit a multiple logistic regression and read its output.</li>
+    <li>Convert coefficients into odds ratios and state them in plain language.</li>
+    <li>Explain how maximum likelihood differs from least squares, and what pseudo-R² is.</li>
+  </ul>
+</Callout>
+
+The dataset for this chapter is 1,800 consumer loans with credit score, income, loan amount,
+debt-to-income ratio, employment history, prior defaults, and whether the loan ultimately
+defaulted. It is synthetic, generated from a known log-odds model, so once again we can compare
+what the fit recovers against what is actually there.
+
+<h2 id="the-data">The data</h2>
+
+<PythonCell label="Exploring before fitting">
+{`import numpy as np
+import pandas as pd
+
+loans = pd.read_csv("loan-defaults.csv")
+
+print(loans.shape)
+print(loans.head().to_string(index=False))
+print()
+print(f"default rate: {loans['defaulted'].mean():.4f}  "
+      f"({loans['defaulted'].sum()} of {len(loans)})")
+
+print()
+print("How each predictor differs between the two groups:")
+numeric = ["credit_score", "annual_income", "loan_amount",
+           "debt_to_income", "months_employed", "prior_defaults"]
+comparison = loans.groupby("defaulted")[numeric].mean().T
+comparison.columns = ["repaid", "defaulted"]
+comparison["difference"] = comparison["defaulted"] - comparison["repaid"]
+print(comparison.round(3).to_string())`}
+</PythonCell>
+
+The direction of every difference is intuitive: defaulters have lower credit scores, higher
+debt-to-income ratios, shorter employment histories and more prior defaults. That is reassuring,
+but a table of group means cannot tell you which of those matter *net of the others* — several of
+them move together. That is what the regression is for.
+
+<Callout title="A 21% base rate is worth noting now">
+  <p>
+    Roughly one loan in five defaults. Keep that number in mind: lesson&nbsp;5.3 shows that a model
+    predicting "no default" for every single loan would score 79% accuracy, which sounds
+    respectable and is completely useless.
+  </p>
+</Callout>
+
+<h2 id="fitting">Fitting the model</h2>
+
+The formula interface is identical to `ols`; only the function name changes. Under the hood the
+difference is larger: there is no closed-form solution, so the coefficients are found by
+**maximum likelihood** — iteratively searching for the parameters that make the observed
+outcomes most probable.
+
+<PythonCell label="Fitting a multiple logistic regression">
+{`import statsmodels.formula.api as smf
+
+model = smf.logit(
+    "defaulted ~ credit_score + debt_to_income + months_employed + prior_defaults",
+    data=loans,
+).fit()
+
+print(model.summary())`}
+</PythonCell>
+
+The summary is close to the linear one, with three differences worth naming.
+
+**`z` instead of `t`.** Maximum-likelihood estimates are asymptotically normal, so the test
+statistic is a z rather than a t. Interpretation is unchanged.
+
+**`Pseudo R-squ.` instead of `R-squared`.** There is no variance to decompose here, so this is
+McFadden's pseudo-R², $1 - \ln L / \ln L_0$: how much better the fitted model's log-likelihood is
+than an intercept-only model's. It is **not** on the same scale as an ordinary R². Values of 0.2
+to 0.4 indicate a good fit; anything near 0.7 usually means something has leaked into the
+predictors.
+
+**`LLR p-value`.** The likelihood-ratio test, playing the role the F-test played in
+chapter&nbsp;4 — does the model beat an intercept alone?
+
+<h2 id="odds-ratios">Coefficients as odds ratios</h2>
+
+Raw logistic coefficients are changes in log-odds, which nobody has intuition for. Exponentiating
+turns them into odds ratios, which are directly quotable.
+
+$$
+\text{odds ratio} = e^{\beta_j}
+$$
+
+An odds ratio of 1 means no effect. Above 1 means the odds increase; below 1 means they decrease.
+And because the effect is multiplicative, a change of $c$ units multiplies the odds by
+$e^{\beta_j c}$ — which is how you rescale to units people care about.
+
+<PythonCell label="Odds ratios, with intervals and in useful units">
+{`odds_ratios = pd.DataFrame({
+    "coefficient": model.params,
+    "odds_ratio": np.exp(model.params),
+    "or_ci_low": np.exp(model.conf_int()[0]),
+    "or_ci_high": np.exp(model.conf_int()[1]),
+    "p_value": model.pvalues,
+})
+print(odds_ratios.round(4).to_string())
+
+print()
+print("Rescaled to differences that actually occur in the data:")
+per_unit = model.params
+
+print(f"  100 points of credit score : odds x {np.exp(per_unit['credit_score'] * 100):.4f}")
+print(f"  0.10 more debt-to-income   : odds x {np.exp(per_unit['debt_to_income'] * 0.10):.4f}")
+print(f"  2 more years employed      : odds x {np.exp(per_unit['months_employed'] * 24):.4f}")
+print(f"  1 prior default            : odds x {np.exp(per_unit['prior_defaults'] * 1):.4f}")
+
+print()
+print("Stated in plain language:")
+print(f"  A borrower with 100 more points of credit score has "
+      f"{(1 - np.exp(per_unit['credit_score'] * 100)) * 100:.0f}% lower odds of default,")
+print("  holding debt-to-income, employment and prior defaults fixed.")`}
+</PythonCell>
+
+<Callout title="Odds ratios are not risk ratios" variant="pitfall">
+  <p>
+    "The odds double" and "the probability doubles" are different claims, and they only coincide
+    when the probability is small. At a base probability of 0.05 an odds ratio of 2 raises the
+    probability to about 0.095 — nearly double. At a base of 0.5 the same odds ratio raises it only
+    to 0.667. Reporting an odds ratio as though it were a relative risk overstates the effect
+    whenever the outcome is common, and default at 21% is common enough to matter.
+  </p>
+</Callout>
+
+<PythonCell label="Recovering the generating model, and predicting">
+{`print("The data were generated with log-odds:")
+print("  -0.9 - 0.011*(credit_score - 650) + 2.2*debt_to_income")
+print("       - 0.020*min(months_employed, 120) + 0.62*prior_defaults")
+print()
+truth = {"credit_score": -0.011, "debt_to_income": 2.2,
+         "months_employed": -0.020, "prior_defaults": 0.62}
+ci = model.conf_int()
+print(f"{'term':<18}{'estimate':>11}{'truth':>9}   95% CI")
+for name, value in truth.items():
+    lo, hi = ci.loc[name]
+    print(f"{name:<18}{model.params[name]:>11.5f}{value:>9.4f}   [{lo:.4f}, {hi:.4f}]")
+
+print()
+print("Predicted probability for three example borrowers:")
+applicants = pd.DataFrame({
+    "credit_score":    [780, 690, 560],
+    "debt_to_income":  [0.18, 0.34, 0.58],
+    "months_employed": [96, 40, 6],
+    "prior_defaults":  [0, 0, 1],
+}, index=["strong", "typical", "weak"])
+
+applicants["P(default)"] = model.predict(applicants)
+applicants["odds"] = applicants["P(default)"] / (1 - applicants["P(default)"])
+print(applicants.round(4).to_string())`}
+</PythonCell>
+
+Every true coefficient falls inside its confidence interval, and the predicted probabilities span
+a wide range — from a few percent for a strong applicant to well over half for a weak one. The
+model has genuinely learned something.
+
+Whether it is *useful* is a separate question, and it is the one lesson&nbsp;5.3 takes up.
+
+<Quiz
+  questions={[
+    {
+      prompt: "A logistic coefficient is −0.0125 on credit score. What does that mean per 100 points?",
+      options: [
+        {
+          text: "The odds of default are multiplied by exp(−1.25) ≈ 0.29 — about 71% lower odds.",
+          correct: true,
+          explanation:
+            "Right. Coefficients are per unit and additive on the log-odds scale, so 100 units means exp(−0.0125 × 100). Multiplicative on odds, additive on log-odds.",
+        },
+        {
+          text: "The probability of default falls by 1.25 percentage points.",
+          explanation:
+            "Coefficients do not live on the probability scale. The change in probability depends on where you start, which is exactly why odds ratios are reported instead.",
+        },
+        {
+          text: "The odds fall by 1.25%.",
+          explanation:
+            "That would be the reading if the coefficient were already an odds ratio. It is a log-odds coefficient, so it must be exponentiated first — and scaled by 100 for 100 points.",
+        },
+      ],
+    },
+    {
+      prompt: "The model reports Pseudo R-squ. = 0.185. How should that be read?",
+      options: [
+        {
+          text: "McFadden's pseudo-R², on its own scale — 0.2 to 0.4 indicates a good fit, and it is not comparable to an OLS R².",
+          correct: true,
+          explanation:
+            "Correct. It compares log-likelihoods rather than decomposing variance. Judging 0.185 as 'only 18.5% explained' imports an interpretation the statistic does not have.",
+        },
+        {
+          text: "The model explains 18.5% of the variance in default, same as an OLS R².",
+          explanation:
+            "There is no variance decomposition in a logistic fit. The two statistics are computed differently and are not on a common scale.",
+        },
+        {
+          text: "The model is poor — anything below 0.5 should be rejected.",
+          explanation:
+            "That threshold would reject nearly every published logistic model. McFadden values run much lower than OLS R² for genuinely useful fits.",
+        },
+      ],
+    },
+    {
+      prompt: "Why is reporting an odds ratio as a relative risk misleading here?",
+      options: [
+        {
+          text: "With a 21% base rate, odds ratios overstate relative risk substantially — the two only converge for rare outcomes.",
+          correct: true,
+          explanation:
+            "Exactly. At p = 0.05 an odds ratio of 2 nearly doubles the probability; at p = 0.5 it raises it only from 0.5 to 0.667. The commoner the outcome, the wider the gap.",
+        },
+        {
+          text: "Odds ratios and relative risks are always numerically identical.",
+          explanation:
+            "They coincide only in the limit of a rare outcome. For common outcomes they diverge, and the odds ratio is always the more extreme of the two.",
+        },
+        {
+          text: "Because relative risk cannot be computed from a logistic model at all.",
+          explanation:
+            "It can — predict probabilities for both scenarios and take their ratio. The point is that the odds ratio is not itself that quantity.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="114-131" />

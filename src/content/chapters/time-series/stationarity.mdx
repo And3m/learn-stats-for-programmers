@@ -1,0 +1,250 @@
+<Callout title="Learning objectives">
+  <p>By the end of this lesson you should be able to:</p>
+  <ul>
+    <li>State what stationarity requires and why models demand it.</li>
+    <li>Spot non-stationarity by eye and confirm it with a test.</li>
+    <li>Apply ordinary and seasonal differencing, and know when to stop.</li>
+  </ul>
+</Callout>
+
+<h2 id="what-it-means">What stationarity means</h2>
+
+A series is **weakly stationary** if three things hold at every point in time:
+
+1. Constant mean — no trend.
+2. Constant variance — the wobble does not grow or shrink.
+3. Autocovariance depending only on the lag, not on when you look. The relationship between today
+   and a week ago is the same in 2021 as in 2024.
+
+Why insist on this? Because ARIMA and its relatives estimate **one** set of parameters and apply
+them everywhere. If the mean drifts, a single mean is a fiction. If the variance grows, one
+variance is a fiction. The model is not merely inaccurate on non-stationary data — its parameters
+have no consistent meaning.
+
+<Callout title="Stationary does not mean boring">
+  <p>
+    A stationary series can be highly structured — strongly autocorrelated, with rich short-term
+    dynamics. What it cannot have is <em>drift</em>: no matter how far you look, the level and the
+    spread stay put. That is why differencing works. It removes the drift and leaves the structure
+    behind for the model to fit.
+  </p>
+</Callout>
+
+<h2 id="spotting-it">Spotting non-stationarity</h2>
+
+Three signals, in decreasing order of reliability.
+
+**Plot it.** A visible trend or a widening band is non-stationarity, and you rarely need anything
+else to see it.
+
+**Compare windows.** Split the series into segments and compute the mean and variance of each. If
+they drift, so does the series.
+
+**Look at the autocorrelation.** A stationary series has an ACF that decays to zero quickly. A
+non-stationary one has an ACF that stays high across many lags, because every point is close to
+its neighbours simply by virtue of the shared trend.
+
+<PythonCell label="Three ways to detect a trend">
+{`import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+traffic = pd.read_csv("web-traffic.csv", parse_dates=["date"]).set_index("date")
+traffic.index.freq = "D"
+sessions = traffic["sessions"]
+
+print("Mean and standard deviation by year:")
+by_year = sessions.groupby(sessions.index.year).agg(["mean", "std"])
+print(by_year.round(0).to_string())
+print()
+print("The mean climbs steadily - that alone rules out stationarity.")
+
+fig, axes = plt.subplots(1, 2, figsize=(9.5, 3.4))
+axes[0].plot(sessions.index, sessions.rolling(90).mean(), linewidth=2, label="90-day mean")
+axes[0].plot(sessions.index, sessions.rolling(90).std(), linewidth=2, label="90-day sd")
+axes[0].set_title("Rolling statistics drift")
+axes[0].legend(fontsize=8)
+
+differenced = sessions.diff().dropna()
+axes[1].plot(differenced.index, differenced.rolling(90).mean(), linewidth=2, label="90-day mean")
+axes[1].plot(differenced.index, differenced.rolling(90).std(), linewidth=2, label="90-day sd")
+axes[1].set_title("After differencing, they do not")
+axes[1].legend(fontsize=8)
+plt.tight_layout()`}
+</PythonCell>
+
+<h2 id="adf-test">The augmented Dickey-Fuller test</h2>
+
+The ADF test formalises the question, with a null hypothesis that is the opposite way round from
+what most people first assume:
+
+- $H_0$: the series **has a unit root** — it is non-stationary.
+- $H_1$: the series is stationary.
+
+So a **small p-value rejects non-stationarity**, which is the outcome you want. A large p-value
+means you failed to reject non-stationarity — which is not the same as proving stationarity, but
+in practice is treated as "difference it."
+
+<PythonCell label="ADF, before and after differencing">
+{`from statsmodels.tsa.stattools import adfuller
+
+def report_adf(name, series):
+    statistic, p_value, lags, n_obs, critical, _ = adfuller(series.dropna())
+    verdict = "stationary" if p_value < 0.05 else "NON-stationary"
+    print(f"{name}")
+    print(f"   ADF statistic {statistic:9.4f}   p-value {p_value:.4f}   -> {verdict}")
+    print(f"   critical values: " +
+          "  ".join(f"{k} {v:.3f}" for k, v in sorted(critical.items())))
+
+report_adf("original series", sessions)
+print()
+report_adf("first difference   (d = 1)", sessions.diff())
+print()
+report_adf("seasonal difference (D = 1, period 7)", sessions.diff(7))
+print()
+report_adf("both differences", sessions.diff().diff(7))`}
+</PythonCell>
+
+The original series fails decisively. Every differenced version passes, which gives you a choice —
+and the choice matters, because differencing is not free.
+
+<h2 id="differencing">Differencing</h2>
+
+**Ordinary differencing** replaces each value with its change from the previous one:
+
+$$
+\nabla y_t = y_t - y_{t-1}
+$$
+
+This removes a linear trend. Differencing twice removes a quadratic one, though needing $d = 2$ is
+uncommon and usually a hint that the series should be transformed instead.
+
+**Seasonal differencing** subtracts the value one full period back:
+
+$$
+\nabla_m y_t = y_t - y_{t-m}
+$$
+
+With $m = 7$ this compares each day to the same weekday last week, removing both the weekly
+pattern and — because the trend over one week is small — much of the trend as well.
+
+<Callout title="Over-differencing is a real error" variant="pitfall">
+  <p>
+    Each difference costs an observation and injects artificial negative autocorrelation at lag 1.
+    Differencing an already-stationary series makes the model harder to fit and the forecasts
+    worse. The rule is to use the <em>smallest</em> d and D that achieve stationarity — usually 0
+    or 1 each, essentially never more than 1 seasonal difference.
+  </p>
+</Callout>
+
+<PythonCell label="Choosing d and D, and seeing over-differencing">
+{`from statsmodels.tsa.stattools import acf
+
+fig, axes = plt.subplots(2, 2, figsize=(9.5, 5.5))
+series_to_plot = [
+    ("original", sessions),
+    ("first difference", sessions.diff()),
+    ("seasonal difference (7)", sessions.diff(7)),
+    ("differenced twice over-eagerly", sessions.diff().diff().diff(7)),
+]
+
+for ax, (name, series) in zip(axes.ravel(), series_to_plot):
+    clean = series.dropna()
+    ax.plot(clean.index, clean.values, linewidth=0.5)
+    ax.set_title(f"{name}  (sd {clean.std():,.0f})", fontsize=9)
+plt.tight_layout()
+
+print(f"{'series':<34}{'sd':>12}{'lag-1 ACF':>12}")
+for name, series in series_to_plot:
+    clean = series.dropna()
+    lag1 = acf(clean, nlags=1)[1]
+    print(f"{name:<34}{clean.std():>12,.0f}{lag1:>12.4f}")
+
+print()
+print("Note the last row: the standard deviation goes UP and the lag-1")
+print("autocorrelation swings strongly negative. Both are signatures of")
+print("over-differencing - the transform is adding noise, not removing trend.")
+
+# statsmodels can suggest the order of differencing directly.
+from statsmodels.tsa.stattools import kpss
+statistic, p_value, _, _ = kpss(sessions.diff(7).dropna(), regression="c", nlags="auto")
+print()
+print("KPSS has the OPPOSITE null (H0 = stationary):")
+print(f"  seasonal difference: statistic {statistic:.4f}, p {p_value:.4f} -> "
+      f"{'stationary' if p_value > 0.05 else 'non-stationary'}")
+print("  Agreement between ADF and KPSS is stronger evidence than either alone.")`}
+</PythonCell>
+
+Running ADF and KPSS together is good practice precisely because their nulls are opposite. ADF
+rejecting *and* KPSS failing to reject is consistent evidence for stationarity; the two
+disagreeing means the series is ambiguous and worth more thought.
+
+<Quiz
+  questions={[
+    {
+      prompt: "An ADF test returns p = 0.54. What does that mean?",
+      options: [
+        {
+          text: "You cannot reject non-stationarity — difference the series before modelling.",
+          correct: true,
+          explanation:
+            "Right. The ADF null is that a unit root is present, so a large p-value leaves non-stationarity on the table. Note this is not proof of non-stationarity, only a failure to rule it out.",
+        },
+        {
+          text: "The series is stationary with 54% confidence.",
+          explanation:
+            "P-values are not confidence levels, and the direction is reversed: a *small* p-value is what argues for stationarity under ADF.",
+        },
+        {
+          text: "The test failed and should be rerun with more lags.",
+          explanation:
+            "0.54 is a perfectly valid result. It is telling you something, just not the thing you wanted to hear.",
+        },
+      ],
+    },
+    {
+      prompt: "What are the signs that you have differenced one time too many?",
+      options: [
+        {
+          text: "The standard deviation increases and lag-1 autocorrelation swings strongly negative.",
+          correct: true,
+          explanation:
+            "Exactly. Differencing a stationary series injects artificial negative autocorrelation and inflates the variance. Use the smallest d and D that achieve stationarity.",
+        },
+        {
+          text: "The ADF p-value rises above 0.05 again.",
+          explanation:
+            "Over-differenced series usually still pass ADF — the test does not detect this failure mode, which is why the variance and ACF checks matter.",
+        },
+        {
+          text: "The series develops a visible trend.",
+          explanation:
+            "Differencing removes trend rather than creating it. The symptoms are excess variance and negative lag-1 autocorrelation.",
+        },
+      ],
+    },
+    {
+      prompt: "Why do ARIMA models require stationarity in the first place?",
+      options: [
+        {
+          text: "They estimate one fixed set of parameters and apply it at every time point, which is only meaningful if the statistical properties do not drift.",
+          correct: true,
+          explanation:
+            "Correct. On a drifting series a single mean, variance and autocorrelation structure are fictions, so the fitted parameters have no consistent interpretation.",
+        },
+        {
+          text: "Because the estimation algorithm will not converge otherwise.",
+          explanation:
+            "It usually converges perfectly well and returns confident-looking numbers. The problem is that those numbers do not mean anything, which is worse.",
+        },
+        {
+          text: "Because non-stationary series cannot be forecast at all.",
+          explanation:
+            "They can — that is exactly what the 'I' in ARIMA is for. You difference to stationarity, model, then integrate the forecasts back.",
+        },
+      ],
+    },
+  ]}
+/>
+
+<SourceNote pages="193-205" />
