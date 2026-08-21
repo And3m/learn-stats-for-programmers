@@ -4,6 +4,7 @@ import { ChevronRight, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { chapterHref, chapters, lessonHref } from "@/lib/content";
 
@@ -25,6 +26,13 @@ const siteLinks: [label: string, href: string][] = [
  *
  * Chapters come straight from `content.ts` rather than props, so this works on
  * every route, including the ones with no chapter context at all.
+ *
+ * The panel is portalled to `document.body`. It cannot render where the opener
+ * sits: `.site-header` sets `backdrop-filter`, which makes it a containing
+ * block for `position: fixed` descendants, so the drawer would resolve against
+ * the 68px header box instead of the viewport and collapse into a strip. The
+ * header is also a stacking context (`position: sticky` + `z-index`), which
+ * would cap the drawer's own z-index. Portalling escapes both.
  */
 export function MobileNav() {
   const pathname = usePathname();
@@ -68,6 +76,96 @@ export function MobileNav() {
     pathname.startsWith(chapterHref(chapter.slug)),
   );
 
+  const panel = (
+    <div className="mobile-nav">
+      <button
+        type="button"
+        className="mobile-nav__scrim"
+        aria-label="Close navigation"
+        tabIndex={-1}
+        onClick={() => setOpen(false)}
+      />
+      <div
+        id={panelId}
+        className="mobile-nav__panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Navigation"
+      >
+        <div className="mobile-nav__bar">
+          <span className="eyebrow">Navigate</span>
+          <button
+            ref={closeRef}
+            type="button"
+            className="icon-button"
+            aria-label="Close navigation"
+            onClick={() => setOpen(false)}
+          >
+            <X size={16} aria-hidden />
+          </button>
+        </div>
+
+        <nav className="mobile-nav__body" aria-label="Site">
+          <ul className="mobile-nav__list">
+            {siteLinks.map(([label, href]) => (
+              <li key={href}>
+                <Link
+                  className="mobile-nav__link"
+                  href={href}
+                  aria-current={pathname === href ? "page" : undefined}
+                >
+                  {label}
+                  <ChevronRight size={14} aria-hidden />
+                </Link>
+              </li>
+            ))}
+          </ul>
+
+          <p className="eyebrow mobile-nav__heading">Chapters</p>
+          <ol className="mobile-nav__list">
+            {chapters.map((chapter) => {
+              const isCurrent = chapter.slug === currentChapter?.slug;
+              return (
+                <li key={chapter.slug}>
+                  <Link
+                    className="mobile-nav__link"
+                    href={chapterHref(chapter.slug)}
+                    aria-current={isCurrent ? "true" : undefined}
+                  >
+                    <span className="mobile-nav__number">
+                      {String(chapter.number).padStart(2, "0")}
+                    </span>
+                    {chapter.shortTitle}
+                  </Link>
+
+                  {isCurrent ? (
+                    <ol className="mobile-nav__lessons">
+                      {chapter.lessons.map((item) => {
+                        const href = lessonHref(chapter.slug, item.slug);
+                        return (
+                          <li key={item.slug}>
+                            <Link
+                              className="mobile-nav__lesson"
+                              href={href}
+                              aria-current={pathname === href ? "page" : undefined}
+                            >
+                              <span className="mobile-nav__number">{item.number}</span>
+                              {item.shortTitle}
+                            </Link>
+                          </li>
+                        );
+                      })}
+                    </ol>
+                  ) : null}
+                </li>
+              );
+            })}
+          </ol>
+        </nav>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <button
@@ -82,95 +180,7 @@ export function MobileNav() {
         <Menu size={16} aria-hidden />
       </button>
 
-      {open ? (
-        <div className="mobile-nav">
-          <button
-            type="button"
-            className="mobile-nav__scrim"
-            aria-label="Close navigation"
-            tabIndex={-1}
-            onClick={() => setOpen(false)}
-          />
-          <div
-            id={panelId}
-            className="mobile-nav__panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Navigation"
-          >
-            <div className="mobile-nav__bar">
-              <span className="eyebrow">Navigate</span>
-              <button
-                ref={closeRef}
-                type="button"
-                className="icon-button"
-                aria-label="Close navigation"
-                onClick={() => setOpen(false)}
-              >
-                <X size={16} aria-hidden />
-              </button>
-            </div>
-
-            <nav className="mobile-nav__body" aria-label="Site">
-              <ul className="mobile-nav__list">
-                {siteLinks.map(([label, href]) => (
-                  <li key={href}>
-                    <Link
-                      className="mobile-nav__link"
-                      href={href}
-                      aria-current={pathname === href ? "page" : undefined}
-                    >
-                      {label}
-                      <ChevronRight size={14} aria-hidden />
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-
-              <p className="eyebrow mobile-nav__heading">Chapters</p>
-              <ol className="mobile-nav__list">
-                {chapters.map((chapter) => {
-                  const isCurrent = chapter.slug === currentChapter?.slug;
-                  return (
-                    <li key={chapter.slug}>
-                      <Link
-                        className="mobile-nav__link"
-                        href={chapterHref(chapter.slug)}
-                        aria-current={isCurrent ? "true" : undefined}
-                      >
-                        <span className="mobile-nav__number">
-                          {String(chapter.number).padStart(2, "0")}
-                        </span>
-                        {chapter.shortTitle}
-                      </Link>
-
-                      {isCurrent ? (
-                        <ol className="mobile-nav__lessons">
-                          {chapter.lessons.map((item) => {
-                            const href = lessonHref(chapter.slug, item.slug);
-                            return (
-                              <li key={item.slug}>
-                                <Link
-                                  className="mobile-nav__lesson"
-                                  href={href}
-                                  aria-current={pathname === href ? "page" : undefined}
-                                >
-                                  <span className="mobile-nav__number">{item.number}</span>
-                                  {item.shortTitle}
-                                </Link>
-                              </li>
-                            );
-                          })}
-                        </ol>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ol>
-            </nav>
-          </div>
-        </div>
-      ) : null}
+      {open ? createPortal(panel, document.body) : null}
     </>
   );
 }

@@ -414,15 +414,25 @@ svg {
   display: none;
 }
 
+/**
+ * Portalled to `document.body`, never rendered inside the header — see
+ * `mobile-nav.tsx`. `100dvh` rather than `inset: 0` so the panel tracks the
+ * visible viewport as mobile browser chrome shows and hides, instead of running
+ * under the URL bar.
+ */
 .mobile-nav {
   position: fixed;
-  inset: 0;
-  z-index: 100;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100dvh;
+  z-index: 200;
 }
 
 .mobile-nav__scrim {
   position: absolute;
   inset: 0;
+  z-index: 0;
   border: 0;
   padding: 0;
   background: rgb(8 12 18 / 55%);
@@ -433,13 +443,18 @@ svg {
 
 .mobile-nav__panel {
   position: absolute;
-  inset: 0 0 0 auto;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  height: 100%;
   width: min(20rem, 88vw);
   display: flex;
   flex-direction: column;
   background: var(--background);
   border-left: 1px solid var(--border);
   box-shadow: -18px 0 45px rgb(8 12 18 / 25%);
+  /* Notched phones in landscape put the panel under the rounded corner. */
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 .mobile-nav__bar {
@@ -453,9 +468,11 @@ svg {
 
 .mobile-nav__body {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  padding: 1rem 0.75rem 2.5rem;
+  padding: 1rem 0.75rem calc(2.5rem + env(safe-area-inset-bottom, 0px));
 }
 
 .mobile-nav__heading {
@@ -473,6 +490,7 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.6rem;
+  min-height: 2.75rem;
   padding: 0.6rem 0.5rem;
   border-radius: 0.5rem;
   font-size: 0.875rem;
@@ -506,6 +524,7 @@ svg {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-height: 2.5rem;
   padding: 0.45rem 0.5rem;
   border-radius: 0.45rem;
   font-size: 0.8125rem;
