@@ -566,33 +566,43 @@ svg {
 
 .home {
   display: grid;
-  grid-template-columns: 17rem minmax(0, 1fr);
+  grid-template-columns: 15rem minmax(0, 1fr);
   gap: 3.5rem;
   padding: 4rem 0 2rem;
   align-items: start;
 }
 
 /**
- * Only the nav freezes, not the whole rail.
+ * The whole rail sticks — cover and buttons together — with no height cap and
+ * no overflow, so it can never grow a scrollbar. At 15rem the cover is 360px
+ * and four 40px buttons come to 184px, making the rail 568px; with the shorter
+ * offset that clears a 1366x768 laptop.
  *
- * Sticking the cover as well made the rail taller than a laptop viewport, which
- * forced a capped height and an internal scrollbar. The cover is decoration and
- * the buttons are the navigation, so the cover scrolls away and the buttons
- * alone stay pinned — no cap, no scrollbar, nothing out of reach.
- *
- * `align-self: stretch` overrides the grid's `align-items: start` so the aside
- * spans the full row and the sticky child has the whole page to travel.
+ * Below that, only the nav sticks (see the short-viewport rule further down),
+ * because a rail taller than the viewport would put its last button
+ * permanently out of reach.
  */
 .home__aside {
-  align-self: stretch;
+  position: sticky;
+  top: 5.5rem;
+  align-self: start;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 1.5rem;
 }
 
-.rail-nav {
-  position: sticky;
-  top: var(--rail-top);
+/* Not enough height for cover and buttons: let the cover scroll away and pin
+   the buttons on their own, which always fits. */
+@media (max-height: 700px) {
+  .home__aside {
+    position: static;
+    align-self: stretch;
+  }
+
+  .rail-nav {
+    position: sticky;
+    top: var(--rail-top);
+  }
 }
 
 .book-cover {
@@ -703,18 +713,21 @@ svg {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.6rem 0.9rem;
+  height: 2.5rem;
+  padding: 0 0.9rem;
   border: 1px solid var(--border);
-  border-radius: 0.6rem;
-  background: var(--surface);
+  border-radius: 0.625rem;
+  /* Transparent, not filled: only the primary action carries a fill, so the
+     secondary ones stay quiet against the page. */
+  background: transparent;
   color: var(--foreground);
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 500;
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .rail-nav__item:hover {
-  background: var(--surface-2);
+  background: var(--surface);
   border-color: color-mix(in srgb, var(--signal) 35%, var(--border));
 }
 
