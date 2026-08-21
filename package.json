@@ -14,7 +14,8 @@
     "datasets": "node scripts/make-datasets.mjs",
     "verify:python": "node scripts/verify-python.mjs",
     "content:map": "node scripts/gen-lesson-components.mjs",
-    "smoke:python": "node scripts/smoke-python.mjs"
+    "smoke:python": "node scripts/smoke-python.mjs",
+    "banner": "node scripts/make-banner.mjs"
   },
   "dependencies": {
     "@codemirror/lang-python": "^6.2.1",

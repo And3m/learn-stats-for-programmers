@@ -1,6 +1,22 @@
-# Statistics for Programmers
+<div align="center">
 
-**[learn-stats-for-programmers.vercel.app](https://learn-stats-for-programmers.vercel.app)**
+<img src=".github/banner.svg" alt="Statistics for Programmers — an interactive course with real Python in the browser" width="100%">
+
+<br>
+
+**[Open the course →](https://learn-stats-for-programmers.vercel.app)**
+
+<br>
+
+[![CI](https://github.com/And3m/learn-stats-for-programmers/actions/workflows/ci.yml/badge.svg)](https://github.com/And3m/learn-stats-for-programmers/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-1a5fb4)](./LICENSE)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16-0d1117?logo=nextdotjs&logoColor=white)](https://nextjs.org)
+[![Pyodide 314](https://img.shields.io/badge/Pyodide-314-1a5fb4?logo=python&logoColor=white)](https://pyodide.org)
+[![Deployed on Vercel](https://img.shields.io/badge/Vercel-deployed-0d1117?logo=vercel&logoColor=white)](https://learn-stats-for-programmers.vercel.app)
+
+</div>
+
+---
 
 An interactive course in the statistics and quantitative methods programmers actually use —
 probability, regression, trees, time series, optimisation, simulation, Markov chains, Benford's
@@ -11,7 +27,16 @@ law, project scheduling and statistical quality control.
 scikit-learn, statsmodels and NetworkX available. No server, no account, nothing uploaded — the
 reader can edit any cell and re-run it.
 
-**14 chapters · 55 lessons · 157 runnable code cells · 109 glossary terms · 83 static pages**
+<table>
+<tr>
+<td align="center"><strong>14</strong><br>chapters</td>
+<td align="center"><strong>55</strong><br>lessons</td>
+<td align="center"><strong>157</strong><br>runnable cells</td>
+<td align="center"><strong>109</strong><br>glossary terms</td>
+<td align="center"><strong>83</strong><br>static pages</td>
+<td align="center"><strong>64</strong><br>unit tests</td>
+</tr>
+</table>
 
 ---
 
@@ -33,11 +58,12 @@ Then open http://localhost:3000.
 | `npm run build` | Static production build (83 pages) |
 | `npm run lint` | ESLint |
 | `npm run typecheck` | `tsc --noEmit` |
-| `npm test` | Vitest unit tests (55) |
+| `npm test` | Vitest unit tests (64) |
 | `npm run datasets` | Regenerate the synthetic CSVs |
 | `npm run content:map` | Regenerate the MDX lesson map after adding a lesson |
 | `npm run smoke:python` | Prove the Pyodide bootstrap works (11 assertions) |
 | `npm run verify:python` | **Execute every code cell in the course, headlessly** |
+| `npm run banner` | Regenerate the README banner at `.github/banner.svg` |
 
 ---
 
@@ -86,6 +112,7 @@ scripts/
   verify-python.mjs           The real correctness gate — see below
   smoke-python.mjs            11 assertions on the bootstrap itself
   make-datasets.mjs           Deterministic dataset generator
+  make-banner.mjs             Draws the README banner from a 5x7 bitmap font
   gen-lesson-components.mjs   Generates the static MDX import map
 ```
 
