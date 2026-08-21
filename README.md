@@ -133,6 +133,14 @@ throughout.
 data from the book are reproduced, and the book itself is not distributed with this project. See
 [/license](https://learn-stats-for-programmers.vercel.app/license) for the full statement.
 
+## Author
+
+Created by **Vijay Andem**.
+
+- GitHub — [@And3m](https://github.com/And3m)
+- Portfolio — [vijayandem.vercel.app](https://vijayandem.vercel.app/)
+- LinkedIn — [vijay-andem](https://www.linkedin.com/in/vijay-andem-b2092223/)
+
 ## License
 
 MIT — see [LICENSE](./LICENSE).

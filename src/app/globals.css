@@ -334,6 +334,79 @@ svg {
   color: var(--foreground);
 }
 
+/* --- author links ---------------------------------------------------------- */
+
+.author-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  margin-left: 0.4rem;
+  padding-left: 0.55rem;
+  border-left: 1px solid var(--border);
+}
+
+.author-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  border-radius: 0.5rem;
+  color: var(--muted);
+  transition: color 0.15s ease, background 0.15s ease;
+}
+
+.author-link:hover {
+  color: var(--foreground);
+  background: var(--surface);
+}
+
+.site-footer__about {
+  margin: 0;
+  max-width: 34rem;
+}
+
+.author-credit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 1rem;
+  width: 100%;
+  margin: 1.5rem 0 0;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.author-credit__by strong {
+  font-weight: 500;
+  color: var(--foreground);
+}
+
+.author-credit__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.1rem;
+  margin-left: auto;
+}
+
+.author-credit__links a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+@media (max-width: 640px) {
+  /* The header runs out of room; the footer credit carries the same links
+     with visible labels, so nothing is lost. */
+  .author-links {
+    display: none;
+  }
+
+  .author-credit__links {
+    margin-left: 0;
+  }
+}
+
 /* ===========================================================================
    Reading progress bar
    =========================================================================== */

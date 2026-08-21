@@ -1,12 +1,13 @@
 import Link from "next/link";
 
+import { AuthorCredit } from "@/components/author-links";
 import { sourceBook } from "@/lib/content";
 
 export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="shell site-footer__inner">
-        <p style={{ margin: 0, maxWidth: "34rem" }}>
+        <p className="site-footer__about">
           An independent, original course. Its syllabus follows{" "}
           <a href={sourceBook.url} rel="noreferrer noopener" target="_blank">
             <em>{sourceBook.title}</em>
@@ -22,6 +23,7 @@ export function SiteFooter() {
           <Link href="/reading">Further reading</Link>
           <Link href="/license">License</Link>
         </nav>
+        <AuthorCredit />
       </div>
     </footer>
   );

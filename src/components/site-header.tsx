@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { AuthorLinks } from "@/components/author-links";
 import { SearchDialog } from "@/components/search/search-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 
@@ -25,6 +26,7 @@ export function SiteHeader() {
           ))}
           <SearchDialog />
           <ThemeToggle />
+          <AuthorLinks />
         </nav>
       </div>
     </header>
