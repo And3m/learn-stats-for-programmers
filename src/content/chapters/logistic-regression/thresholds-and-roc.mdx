@@ -132,12 +132,10 @@ repayer at random, and the model ranks the defaulter higher about 79% of the tim
 AUC 0.79 means, concretely.
 
 <Callout title="AUC hides the class imbalance" variant="warning">
-  <p>
-    The false positive rate has the large true-negative count in its denominator, so on heavily
-    imbalanced data a model can post an impressive AUC while its precision at any usable threshold
-    is dismal. The precision-recall curve has no such blind spot, because true negatives appear
-    nowhere in either axis. When positives are rare, quote both — or prefer average precision.
-  </p>
+  The false positive rate has the large true-negative count in its denominator, so on heavily
+  imbalanced data a model can post an impressive AUC while its precision at any usable threshold
+  is dismal. The precision-recall curve has no such blind spot, because true negatives appear
+  nowhere in either axis. When positives are rare, quote both — or prefer average precision.
 </Callout>
 
 <h2 id="choosing">Choosing an operating point</h2>

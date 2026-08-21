@@ -47,12 +47,10 @@ The shaded band on the plots is a 95% confidence interval around zero, roughly $
 Spikes inside it are consistent with noise.
 
 <Callout title="Expect false positives" variant="warning">
-  <p>
-    At the 95% level, about one lag in twenty will poke outside the band by chance. On a 30-lag
-    plot that is one or two spikes you should ignore. Treat an isolated spike at lag 17 as noise
-    unless you have a reason to expect structure there; treat a spike at the seasonal period as
-    real.
-  </p>
+  At the 95% level, about one lag in twenty will poke outside the band by chance. On a 30-lag
+  plot that is one or two spikes you should ignore. Treat an isolated spike at lag 17 as noise
+  unless you have a reason to expect structure there; treat a spike at the seasonal period as
+  real.
 </Callout>
 
 <PythonCell label="ACF and PACF on the raw and differenced series">
@@ -115,12 +113,10 @@ term with $s = 7$, and essentially no non-seasonal structure — a strong hint t
 fitted in the next lesson.
 
 <Callout title="ACF and PACF suggest; they do not decide" variant="warning">
-  <p>
-    Textbook ACF/PACF patterns are clean because textbook data is simulated from a known process.
-    Real plots are ambiguous more often than not. Use them to narrow the candidates to two or
-    three, then choose between those with AIC and residual diagnostics — which is exactly how the
-    next lesson proceeds.
-  </p>
+  Textbook ACF/PACF patterns are clean because textbook data is simulated from a known process.
+  Real plots are ambiguous more often than not. Use them to narrow the candidates to two or
+  three, then choose between those with AIC and residual diagnostics — which is exactly how the
+  next lesson proceeds.
 </Callout>
 
 <Quiz

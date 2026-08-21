@@ -147,13 +147,11 @@ print(f"  right {len(right):3d} rows, {right.mean():.1%} class 1, Gini {gini_imp
 </PythonCell>
 
 <Callout title="Why trees struggle with diagonal boundaries" variant="warning">
-  <p>
-    Because every split is <em>one feature vs. one threshold</em>, the decision boundary is always
-    made of axis-parallel rectangles. If the true boundary is the line{" "}
-    <code>x + y = 5</code>, a tree approximates it with a staircase and needs many splits to get a
-    mediocre fit — while a logistic regression with both features handles it in one step. When you
-    see a tree with surprising depth on simple-looking data, this is often why.
-  </p>
+  Because every split is <em>one feature vs. one threshold</em>, the decision boundary is always
+  made of axis-parallel rectangles. If the true boundary is the line{" "}
+  <code>x + y = 5</code>, a tree approximates it with a staircase and needs many splits to get a
+  mediocre fit — while a logistic regression with both features handles it in one step. When you
+  see a tree with surprising depth on simple-looking data, this is often why.
 </Callout>
 
 <Quiz

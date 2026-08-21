@@ -105,12 +105,10 @@ for confidence in [0.50, 0.80, 0.90, 0.95]:
 </PythonCell>
 
 <Callout title="The classical calculation is optimistic" variant="pitfall">
-  <p>
-    It considers only the critical path, and ignores that a <em>near</em>-critical path can
-    overrun and become the binding one. With several paths of similar length, the probability that
-    <em>all</em> of them finish by the target is lower — often much lower — than the probability
-    that the critical one does. The correction is simulation, and the gap is usually startling.
-  </p>
+  It considers only the critical path, and ignores that a <em>near</em>-critical path can
+  overrun and become the binding one. With several paths of similar length, the probability that
+  <em>all</em> of them finish by the target is lower — often much lower — than the probability
+  that the critical one does. The correction is simulation, and the gap is usually startling.
 </Callout>
 
 <PythonCell label="Simulation tells a different story">

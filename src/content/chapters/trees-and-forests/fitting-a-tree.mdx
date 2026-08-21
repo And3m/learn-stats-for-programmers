@@ -54,12 +54,10 @@ The fix is a **held-out test set**: fit on one portion, evaluate on data the mod
 Nothing that touches the test set may influence the model, including your choices about it.
 
 <Callout title="Stratify the split">
-  <p>
-    <code>stratify=y</code> preserves the class proportions in both halves. Without it, a random
-    split can leave one class over-represented in the test set by chance, and every metric shifts
-    for reasons that have nothing to do with the model. It costs one keyword and should be the
-    default for classification.
-  </p>
+  <code>stratify=y</code> preserves the class proportions in both halves. Without it, a random
+  split can leave one class over-represented in the test set by chance, and every metric shifts
+  for reasons that have nothing to do with the model. It costs one keyword and should be the
+  default for classification.
 </Callout>
 
 <PythonCell label="Split, fit, evaluate">

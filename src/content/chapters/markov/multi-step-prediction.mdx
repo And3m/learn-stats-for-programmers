@@ -144,13 +144,11 @@ ax.legend(fontsize=8)`}
 </PythonCell>
 
 <Callout title="Convergence is not automatic" variant="warning">
-  <p>
-    This chain converges because it is <strong>irreducible</strong> (every state reachable from
-    every other) and <strong>aperiodic</strong> (it does not cycle with a fixed period). A chain
-    that strictly alternates between two states — <code>[[0,1],[1,0]]</code> — never settles; it
-    oscillates forever. And a chain with absorbing states converges to something that <em>does</em>{" "}
-    depend on where you started, which is lesson&nbsp;11.4.
-  </p>
+  This chain converges because it is <strong>irreducible</strong> (every state reachable from
+  every other) and <strong>aperiodic</strong> (it does not cycle with a fixed period). A chain
+  that strictly alternates between two states — <code>[[0,1],[1,0]]</code> — never settles; it
+  oscillates forever. And a chain with absorbing states converges to something that <em>does</em>{" "}
+  depend on where you started, which is lesson&nbsp;11.4.
 </Callout>
 
 <PythonCell label="A chain that does not converge">

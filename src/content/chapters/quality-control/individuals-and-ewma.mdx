@@ -93,12 +93,10 @@ plt.tight_layout()`}
 </PythonCell>
 
 <Callout title="I charts are weak, and it is not their fault" variant="warning">
-  <p>
-    With n = 1 there is no averaging, so the limits are three full process sigmas wide. A shift of
-    one sigma then takes about 44 periods to detect on average. That is not a defect in the method
-    — it is the information content of a single measurement. When you need faster detection from
-    individual readings, the answer is EWMA or CUSUM, not a different Shewhart chart.
-  </p>
+  With n = 1 there is no averaging, so the limits are three full process sigmas wide. A shift of
+  one sigma then takes about 44 periods to detect on average. That is not a defect in the method
+  — it is the information content of a single measurement. When you need faster detection from
+  individual readings, the answer is EWMA or CUSUM, not a different Shewhart chart.
 </Callout>
 
 <h2 id="ewma">EWMA charts</h2>
@@ -228,12 +226,10 @@ print("sustained shifts - at the cost of sluggishness against large jumps.")`}
 </PythonCell>
 
 <Callout title="Use them together">
-  <p>
-    The standard recommendation is to run a Shewhart chart <em>and</em> an EWMA or CUSUM on the
-    same process. The Shewhart chart catches large sudden changes immediately; the EWMA catches the
-    slow drift that would otherwise take fifty periods to notice. They fail in opposite directions,
-    which is precisely why the pair works.
-  </p>
+  The standard recommendation is to run a Shewhart chart <em>and</em> an EWMA or CUSUM on the
+  same process. The Shewhart chart catches large sudden changes immediately; the EWMA catches the
+  slow drift that would otherwise take fifty periods to notice. They fail in opposite directions,
+  which is precisely why the pair works.
 </Callout>
 
 <Quiz

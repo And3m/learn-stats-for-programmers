@@ -22,12 +22,10 @@ variance is a fiction. The model is not merely inaccurate on non-stationary data
 have no consistent meaning.
 
 <Callout title="Stationary does not mean boring">
-  <p>
-    A stationary series can be highly structured — strongly autocorrelated, with rich short-term
-    dynamics. What it cannot have is <em>drift</em>: no matter how far you look, the level and the
-    spread stay put. That is why differencing works. It removes the drift and leaves the structure
-    behind for the model to fit.
-  </p>
+  A stationary series can be highly structured — strongly autocorrelated, with rich short-term
+  dynamics. What it cannot have is <em>drift</em>: no matter how far you look, the level and the
+  spread stay put. That is why differencing works. It removes the drift and leaves the structure
+  behind for the model to fit.
 </Callout>
 
 <h2 id="spotting-it">Spotting non-stationarity</h2>
@@ -129,12 +127,10 @@ With $m = 7$ this compares each day to the same weekday last week, removing both
 pattern and — because the trend over one week is small — much of the trend as well.
 
 <Callout title="Over-differencing is a real error" variant="pitfall">
-  <p>
-    Each difference costs an observation and injects artificial negative autocorrelation at lag 1.
-    Differencing an already-stationary series makes the model harder to fit and the forecasts
-    worse. The rule is to use the <em>smallest</em> d and D that achieve stationarity — usually 0
-    or 1 each, essentially never more than 1 seasonal difference.
-  </p>
+  Each difference costs an observation and injects artificial negative autocorrelation at lag 1.
+  Differencing an already-stationary series makes the model harder to fit and the forecasts
+  worse. The rule is to use the <em>smallest</em> d and D that achieve stationarity — usually 0
+  or 1 each, essentially never more than 1 seasonal difference.
 </Callout>
 
 <PythonCell label="Choosing d and D, and seeing over-differencing">

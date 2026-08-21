@@ -43,12 +43,10 @@ When $k = n$ the formula gives $n!$ — the number of ways to arrange everything
 finish in $8! = 40{,}320$ different orders.
 
 <Callout title="Repetition changes the formula" variant="warning">
-  <p>
-    The formula above assumes items are used up as they are chosen. If repetition is allowed — as
-    with a PIN, where digits can repeat — the count is simply <em>n<sup>k</sup></em>. A four-digit
-    PIN has 10<sup>4</sup> = 10,000 possibilities, not P(10,4) = 5,040. Read the problem carefully
-    for whether items are replaced.
-  </p>
+  The formula above assumes items are used up as they are chosen. If repetition is allowed — as
+  with a PIN, where digits can repeat — the count is simply <em>n<sup>k</sup></em>. A four-digit
+  PIN has 10<sup>4</sup> = 10,000 possibilities, not P(10,4) = 5,040. Read the problem carefully
+  for whether items are replaced.
 </Callout>
 
 <h2 id="combinations">Combinations</h2>
@@ -129,12 +127,10 @@ print(f"P(plain flush)                 = {plain_flushes / total_hands:.6f}  (1 i
 </PythonCell>
 
 <Callout title="Why this matters later">
-  <p>
-    Combinations are not a party trick. The binomial coefficient is the first term of the binomial
-    distribution in chapter&nbsp;3 — it counts <em>how many ways</em> k successes can be arranged
-    among n trials, which is exactly the "does order matter" question applied to a sequence of
-    coin flips. If you are comfortable here, that formula will look obvious rather than arbitrary.
-  </p>
+  Combinations are not a party trick. The binomial coefficient is the first term of the binomial
+  distribution in chapter&nbsp;3 — it counts <em>how many ways</em> k successes can be arranged
+  among n trials, which is exactly the "does order matter" question applied to a sequence of
+  coin flips. If you are comfortable here, that formula will look obvious rather than arbitrary.
 </Callout>
 
 <Quiz

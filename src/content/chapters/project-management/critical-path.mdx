@@ -145,13 +145,11 @@ Positive slack means the activity has room. An activity with six days of slack c
 late, or run six days long, and the finish date does not move.
 
 <Callout title="Slack is shared, not owned" variant="warning">
-  <p>
-    Slack belongs to a <em>path</em>, not to an activity. If two activities in sequence each show
-    four days of slack, that is usually the same four days seen twice — consume it on the first and
-    the second has none left. This is <strong>total float</strong>. Free float, which is what an
-    activity can absorb without affecting any successor, is the more conservative figure and is
-    often much smaller.
-  </p>
+  Slack belongs to a <em>path</em>, not to an activity. If two activities in sequence each show
+  four days of slack, that is usually the same four days seen twice — consume it on the first and
+  the second has none left. This is <strong>total float</strong>. Free float, which is what an
+  activity can absorb without affecting any successor, is the more conservative figure and is
+  often much smaller.
 </Callout>
 
 <h2 id="finding-the-path">Finding the path in code</h2>

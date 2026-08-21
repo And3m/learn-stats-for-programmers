@@ -42,11 +42,9 @@ but a table of group means cannot tell you which of those matter *net of the oth
 them move together. That is what the regression is for.
 
 <Callout title="A 21% base rate is worth noting now">
-  <p>
-    Roughly one loan in five defaults. Keep that number in mind: lesson&nbsp;5.3 shows that a model
-    predicting "no default" for every single loan would score 79% accuracy, which sounds
-    respectable and is completely useless.
-  </p>
+  Roughly one loan in five defaults. Keep that number in mind: lesson&nbsp;5.3 shows that a model
+  predicting "no default" for every single loan would score 79% accuracy, which sounds
+  respectable and is completely useless.
 </Callout>
 
 <h2 id="fitting">Fitting the model</h2>
@@ -121,13 +119,11 @@ print("  holding debt-to-income, employment and prior defaults fixed.")`}
 </PythonCell>
 
 <Callout title="Odds ratios are not risk ratios" variant="pitfall">
-  <p>
-    "The odds double" and "the probability doubles" are different claims, and they only coincide
-    when the probability is small. At a base probability of 0.05 an odds ratio of 2 raises the
-    probability to about 0.095 — nearly double. At a base of 0.5 the same odds ratio raises it only
-    to 0.667. Reporting an odds ratio as though it were a relative risk overstates the effect
-    whenever the outcome is common, and default at 21% is common enough to matter.
-  </p>
+  "The odds double" and "the probability doubles" are different claims, and they only coincide
+  when the probability is small. At a base probability of 0.05 an odds ratio of 2 raises the
+  probability to about 0.095 — nearly double. At a base of 0.5 the same odds ratio raises it only
+  to 0.667. Reporting an odds ratio as though it were a relative risk overstates the effect
+  whenever the outcome is common, and default at 21% is common enough to matter.
 </Callout>
 
 <PythonCell label="Recovering the generating model, and predicting">

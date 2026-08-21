@@ -32,14 +32,12 @@ statement into a wrong one.
    kilograms: 300 kg costs about 1.07 kpl.
 
 <Callout title="The power coefficient is positive. Is that plausible?" variant="warning">
-  <p>
-    On its own, "more power improves fuel economy" is nonsense. But the coefficient is not on its
-    own — it is conditional on engine size and weight being held fixed. Among vehicles of identical
-    displacement and mass, the more powerful one is likely to be the more modern, more efficient
-    engine. Sign flips like this are normal in multiple regression and are one of the clearest
-    reminders that these are conditional statements, not marginal ones. Note also that{" "}
-    <code>power_kw</code> is correlated 0.94 with <code>engine_litres</code> — see below.
-  </p>
+  On its own, "more power improves fuel economy" is nonsense. But the coefficient is not on its
+  own — it is conditional on engine size and weight being held fixed. Among vehicles of identical
+  displacement and mass, the more powerful one is likely to be the more modern, more efficient
+  engine. Sign flips like this are normal in multiple regression and are one of the clearest
+  reminders that these are conditional statements, not marginal ones. Note also that{" "}
+  <code>power_kw</code> is correlated 0.94 with <code>engine_litres</code> — see below.
 </Callout>
 
 <PythonCell label="Coefficients in units people care about">
@@ -92,12 +90,10 @@ essentially the same evidence, and treating them as categorically different is h
 poor analysis happens.
 
 <Callout title="What multiple testing does to p-values" variant="pitfall">
-  <p>
-    Test twenty independent null hypotheses at the 5% level and you should expect one "significant"
-    result purely by chance. Adding predictors until something reaches p &lt; 0.05 guarantees you
-    find one. If you test many things, either correct for it (Bonferroni divides the threshold by
-    the number of tests) or state plainly that the analysis was exploratory.
-  </p>
+  Test twenty independent null hypotheses at the 5% level and you should expect one "significant"
+  result purely by chance. Adding predictors until something reaches p &lt; 0.05 guarantees you
+  find one. If you test many things, either correct for it (Bonferroni divides the threshold by
+  the number of tests) or state plainly that the analysis was exploratory.
 </Callout>
 
 <h2 id="intervals">Confidence vs. prediction intervals</h2>

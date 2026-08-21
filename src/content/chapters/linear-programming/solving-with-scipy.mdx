@@ -27,13 +27,11 @@ $3x_1 + 2x_2 \ge 90$ becomes $-3x_1 - 2x_2 \le -90$. Simple bounds on a single v
 in `bounds` instead, where the solver handles them more efficiently.
 
 <Callout title="PuLP, and why this course uses SciPy">
-  <p>
-    Much LP teaching uses PuLP, whose algebraic syntax is more readable. PuLP is a modelling layer
-    that hands the problem to an external solver binary — usually CBC — and that binary is not
-    available in WebAssembly, so PuLP cannot solve anything in this browser runtime. SciPy's{" "}
-    <code>linprog</code> calls HiGHS, a first-rate open-source solver compiled into SciPy itself.
-    The formulation work is identical; only the syntax differs.
-  </p>
+  Much LP teaching uses PuLP, whose algebraic syntax is more readable. PuLP is a modelling layer
+  that hands the problem to an external solver binary — usually CBC — and that binary is not
+  available in WebAssembly, so PuLP cannot solve anything in this browser runtime. SciPy's{" "}
+  <code>linprog</code> calls HiGHS, a first-rate open-source solver compiled into SciPy itself.
+  The formulation work is identical; only the syntax differs.
 </Callout>
 
 <h2 id="linprog">Solving with scipy.optimize.linprog</h2>
@@ -143,11 +141,9 @@ print("formulation bugs rather than solver failures.")`}
 </PythonCell>
 
 <Callout title="Always check status before reading x" variant="pitfall">
-  <p>
-    On failure, <code>result.x</code> may be <code>None</code> or may contain the last iterate the
-    solver happened to be holding. Code that reads <code>result.x</code> without checking{" "}
-    <code>result.success</code> will silently act on a plan that satisfies nothing.
-  </p>
+  On failure, <code>result.x</code> may be <code>None</code> or may contain the last iterate the
+  solver happened to be holding. Code that reads <code>result.x</code> without checking{" "}
+  <code>result.success</code> will silently act on a plan that satisfies nothing.
 </Callout>
 
 <Quiz

@@ -35,13 +35,11 @@ Two coins both landing heads: $\tfrac{1}{2} \times \tfrac{1}{2} = \tfrac{1}{4}$.
 and then drawing an ace: $\tfrac{1}{6} \times \tfrac{4}{52} = \tfrac{1}{78}$.
 
 <Callout title="Independence is a claim, not a default" variant="warning">
-  <p>
-    Multiplying probabilities is only valid when the events really are independent. Two servers in
-    the same rack failing are not independent events; nor are two loans defaulting in the same
-    recession. Treating dependent events as independent systematically <em>understates</em> the
-    probability of joint bad outcomes, which is a large part of why tail risk gets underestimated
-    in practice. Chapter&nbsp;3 gives you the general rule that does not need the assumption.
-  </p>
+  Multiplying probabilities is only valid when the events really are independent. Two servers in
+  the same rack failing are not independent events; nor are two loans defaulting in the same
+  recession. Treating dependent events as independent systematically <em>understates</em> the
+  probability of joint bad outcomes, which is a large part of why tail risk gets underestimated
+  in practice. Chapter&nbsp;3 gives you the general rule that does not need the assumption.
 </Callout>
 
 <PythonCell label="Independent and dependent, side by side">
@@ -131,12 +129,10 @@ outside its conditions. Counting the union directly, as the last line does, is a
 and is a good sanity check.
 
 <Callout title="A shortcut worth remembering">
-  <p>
-    Questions phrased as <em>"at least one"</em> are almost always easier from the other side.
-    The probability of at least one head in ten flips is not a sum of ten terms — it is one minus
-    the probability of no heads at all, or 1 − (1/2)<sup>10</sup> ≈ 0.999. This is the complement
-    rule, and chapter&nbsp;3 gives it a section of its own.
-  </p>
+  Questions phrased as <em>"at least one"</em> are almost always easier from the other side.
+  The probability of at least one head in ten flips is not a sum of ten terms — it is one minus
+  the probability of no heads at all, or 1 − (1/2)<sup>10</sup> ≈ 0.999. This is the complement
+  rule, and chapter&nbsp;3 gives it a section of its own.
 </Callout>
 
 <Quiz

@@ -84,12 +84,10 @@ print("tree. The difference is what happens on data they have not seen.")`}
 </PythonCell>
 
 <Callout title="A forest is not automatically better" variant="warning">
-  <p>
-    On this dataset the forest lands close to a well-tuned shallow tree, and clearly ahead of the
-    unpruned one. That is the honest picture: ensembles reliably rescue you from a high-variance
-    single tree, but when the signal is genuinely simple, a constrained tree can match them — and
-    it can be read, which a forest of 300 trees cannot.
-  </p>
+  On this dataset the forest lands close to a well-tuned shallow tree, and clearly ahead of the
+  unpruned one. That is the honest picture: ensembles reliably rescue you from a high-variance
+  single tree, but when the signal is genuinely simple, a constrained tree can match them — and
+  it can be read, which a forest of 300 trees cannot.
 </Callout>
 
 <PythonCell label="Why more trees help, and where it stops">
@@ -187,12 +185,10 @@ disagreement is informative: it tells you that no individual ranking is trustwor
 underlying information is shared.
 
 <Callout title="Importance is not causation, and not even effect size" variant="pitfall">
-  <p>
-    A high importance means the model leaned on that feature. It does not mean the feature causes
-    the outcome, nor that intervening on it would change anything, nor that it is irreplaceable —
-    drop it and a correlated feature will often absorb the work with almost no loss. Treat
-    importance as a description of the model, not of the world.
-  </p>
+  A high importance means the model leaned on that feature. It does not mean the feature causes
+  the outcome, nor that intervening on it would change anything, nor that it is irreplaceable —
+  drop it and a correlated feature will often absorb the work with almost no loss. Treat
+  importance as a description of the model, not of the world.
 </Callout>
 
 <h2 id="when-to-use">When to reach for a forest</h2>

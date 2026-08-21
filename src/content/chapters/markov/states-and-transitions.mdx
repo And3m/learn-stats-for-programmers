@@ -32,12 +32,10 @@ year" and "active, tenure over one year" as separate states — which restores t
 the cost of more states to estimate.
 
 <Callout title="Test the assumption, do not assume it" variant="warning">
-  <p>
-    The Markov property is checkable. Compare the transition rates out of a state for entities that
-    arrived from different places: if customers who reached "at risk" from "active" churn at a
-    different rate than those who reached it from "lapsed", the property fails and the model will
-    misstate long-run behaviour.
-  </p>
+  The Markov property is checkable. Compare the transition rates out of a state for entities that
+  arrived from different places: if customers who reached "at risk" from "active" churn at a
+  different rate than those who reached it from "lapsed", the property fails and the model will
+  misstate long-run behaviour.
 </Callout>
 
 <h2 id="transition-matrix">The transition matrix</h2>
@@ -147,12 +145,10 @@ print("getting smaller each month. That is the next lesson.")`}
 </PythonCell>
 
 <Callout title="Row vector on the left, or column vector on the right?">
-  <p>
-    This course uses <code>pi @ P</code> with <code>pi</code> as a row vector and rows of{" "}
-    <code>P</code> summing to 1. Much of the physics literature uses the transpose convention:{" "}
-    <code>P @ pi</code> with columns summing to 1. Both are correct; mixing them silently is not.
-    Check the row sums of any matrix you did not build yourself.
-  </p>
+  This course uses <code>pi @ P</code> with <code>pi</code> as a row vector and rows of{" "}
+  <code>P</code> summing to 1. Much of the physics literature uses the transpose convention:{" "}
+  <code>P @ pi</code> with columns summing to 1. Both are correct; mixing them silently is not.
+  Check the row sums of any matrix you did not build yourself.
 </Callout>
 
 <PythonCell label="Simulating individual customers">

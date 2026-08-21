@@ -107,12 +107,10 @@ can be tested directly.
   suggests positive autocorrelation.
 
 <Callout title="Tests get more sensitive as n grows" variant="warning">
-  <p>
-    With 100,000 observations, a normality test will reject essentially any real dataset, because
-    no real data is exactly normal and the test has the power to detect it. That does not mean the
-    model is unusable. Read the test alongside the plot and ask how <em>badly</em> the assumption
-    fails, not merely whether it fails.
-  </p>
+  With 100,000 observations, a normality test will reject essentially any real dataset, because
+  no real data is exactly normal and the test has the power to detect it. That does not mean the
+  model is unusable. Read the test alongside the plot and ask how <em>badly</em> the assumption
+  fails, not merely whether it fails.
 </Callout>
 
 <PythonCell label="All three tests">
@@ -192,13 +190,11 @@ pulls every coefficient back toward the values the data were actually generated 
 diagnostics were not a formality — they were pointing at a real, fixable defect in the model.
 
 <Callout title="Flagging outliers by their residuals is circular" variant="pitfall">
-  <p>
-    The cell above identifies hybrids using residuals from the very model being corrected, which
-    would be indefensible in real analysis: you can always improve a fit by adding an indicator for
-    the points it fits worst. It is legitimate here <em>only</em> because we know from how the data
-    were generated that a genuine subgroup exists. In practice, find the variable in the world —
-    a powertrain column, a customer segment, a manufacturing line — rather than in the residuals.
-  </p>
+  The cell above identifies hybrids using residuals from the very model being corrected, which
+  would be indefensible in real analysis: you can always improve a fit by adding an indicator for
+  the points it fits worst. It is legitimate here <em>only</em> because we know from how the data
+  were generated that a genuine subgroup exists. In practice, find the variable in the world —
+  a powertrain column, a customer segment, a manufacturing line — rather than in the residuals.
 </Callout>
 
 <Quiz

@@ -87,12 +87,10 @@ print(f"Lowest AIC: ARIMA{best_order}{best_seasonal}")`}
 </PythonCell>
 
 <Callout title="AIC compares models, not reality" variant="warning">
-  <p>
-    An information criterion ranks the candidates you gave it. It cannot tell you that the whole
-    family is wrong, and its absolute value means nothing — only differences between models fitted
-    to <em>the same data</em> are interpretable. Changing d changes the data being modelled, so AIC
-    values across different differencing orders are not comparable.
-  </p>
+  An information criterion ranks the candidates you gave it. It cannot tell you that the whole
+  family is wrong, and its absolute value means nothing — only differences between models fitted
+  to <em>the same data</em> are interpretable. Changing d changes the data being modelled, so AIC
+  values across different differencing orders are not comparable.
 </Callout>
 
 <h2 id="fitting">Fitting the model</h2>
@@ -186,13 +184,11 @@ for step in [0, 6, 13, 27]:
 </PythonCell>
 
 <Callout title="The benchmark wins" variant="pitfall">
-  <p>
-    On this series the seasonal-naive rule is competitive with — and by MAPE slightly better than —
-    a fitted seasonal ARIMA. That is a real result, not a defect in the setup, and it is why
-    lesson&nbsp;7.1 insisted on establishing the benchmark first. A model earns its complexity by
-    beating the trivial alternative on held-out data. When it does not, the honest conclusion is to
-    ship the one-line rule.
-  </p>
+  On this series the seasonal-naive rule is competitive with — and by MAPE slightly better than —
+  a fitted seasonal ARIMA. That is a real result, not a defect in the setup, and it is why
+  lesson&nbsp;7.1 insisted on establishing the benchmark first. A model earns its complexity by
+  beating the trivial alternative on held-out data. When it does not, the honest conclusion is to
+  ship the one-line rule.
 </Callout>
 
 <Quiz

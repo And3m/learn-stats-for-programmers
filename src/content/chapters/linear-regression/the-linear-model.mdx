@@ -39,12 +39,10 @@ The crucial shift in meaning: in multiple regression, $\beta_1$ is the effect of
 is largely about respecting it.
 
 <Callout title="Linear in the coefficients, not in the variables">
-  <p>
-    "Linear" constrains how the <em>coefficients</em> enter, not the predictors. Fitting{" "}
-    <code>y ~ x + x**2</code> is still a linear model, and so is <code>y ~ log(x)</code>. What
-    would <em>not</em> be linear is something like <code>y = x^β</code>. This is why linear
-    regression handles far more curvature than its name suggests.
-  </p>
+  "Linear" constrains how the <em>coefficients</em> enter, not the predictors. Fitting{" "}
+  <code>y ~ x + x**2</code> is still a linear model, and so is <code>y ~ log(x)</code>. What
+  would <em>not</em> be linear is something like <code>y = x^β</code>. This is why linear
+  regression handles far more curvature than its name suggests.
 </Callout>
 
 <h2 id="least-squares">Why least squares</h2>
