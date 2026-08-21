@@ -1,3 +1,5 @@
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import type { Metadata } from "next";
 import { IBM_Plex_Mono, Inter, Source_Serif_4 } from "next/font/google";
 
@@ -78,6 +80,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <main id="main">{children}</main>
           <SiteFooter />
         </ThemeProvider>
+        {/* Vercel Analytics and Speed Insights. Both no-op off Vercel, so a
+            local `npm run dev` and the CI build stay silent. */}
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
