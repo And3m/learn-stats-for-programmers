@@ -309,8 +309,8 @@ svg {
 }
 
 .site-footer {
-  margin-top: 5rem;
-  padding: 2.5rem 0 3.5rem;
+  margin-top: 3rem;
+  padding: 1.75rem 0 2rem;
   border-top: 1px solid var(--border);
   font-size: 0.8125rem;
   color: var(--muted);
@@ -319,7 +319,7 @@ svg {
 .site-footer__inner {
   display: flex;
   flex-wrap: wrap;
-  gap: 1rem 2rem;
+  gap: 0.75rem 2rem;
   align-items: baseline;
   justify-content: space-between;
 }
@@ -372,8 +372,8 @@ svg {
   align-items: center;
   gap: 0.4rem 1rem;
   width: 100%;
-  margin: 1.5rem 0 0;
-  padding-top: 1.25rem;
+  margin: 0.85rem 0 0;
+  padding-top: 0.85rem;
   border-top: 1px solid var(--border);
 }
 
@@ -573,41 +573,26 @@ svg {
 }
 
 /**
- * Frozen rail, same pattern as `.lesson-rail`: stuck to the viewport, capped
- * to its height, scrolling internally when the cover plus five buttons do not
- * fit. Without the cap a short viewport puts the last button permanently below
- * the fold, unreachable at any scroll position.
+ * Only the nav freezes, not the whole rail.
  *
- * The padding/negative-margin pair gives the cover's shadow room inside the
- * scroll box while keeping the column its declared width.
+ * Sticking the cover as well made the rail taller than a laptop viewport, which
+ * forced a capped height and an internal scrollbar. The cover is decoration and
+ * the buttons are the navigation, so the cover scrolls away and the buttons
+ * alone stay pinned — no cap, no scrollbar, nothing out of reach.
+ *
+ * `align-self: stretch` overrides the grid's `align-items: start` so the aside
+ * spans the full row and the sticky child has the whole page to travel.
  */
 .home__aside {
-  position: sticky;
-  top: var(--rail-top);
-  max-height: calc(100vh - var(--rail-top) - 2rem);
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  align-self: stretch;
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
-  padding: 0.5rem 1.75rem 1rem;
-  margin: -0.5rem -1.75rem -1rem;
 }
 
-/* The rail is a capped flex column, so its children would otherwise shrink to
-   fit — which squashes the cover out of its 2:3 book proportions. Let the rail
-   scroll instead. */
-.home__aside > * {
-  flex-shrink: 0;
-}
-
-.home__aside::-webkit-scrollbar {
-  width: 6px;
-}
-
-.home__aside::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+.rail-nav {
+  position: sticky;
+  top: var(--rail-top);
 }
 
 .book-cover {
@@ -711,6 +696,7 @@ svg {
   flex-direction: column;
   gap: 0.5rem;
 }
+
 
 .rail-nav__item {
   display: flex;
@@ -857,12 +843,12 @@ svg {
   }
 
   .home__aside {
-    position: static;
+    align-self: start;
     max-width: 12rem;
-    max-height: none;
-    overflow: visible;
-    padding: 0;
-    margin: 0;
+  }
+
+  .rail-nav {
+    position: static;
   }
 
   .home__intro h1 {
