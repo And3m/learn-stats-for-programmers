@@ -14,6 +14,14 @@ export const PYODIDE_INDEX_URL = `https://cdn.jsdelivr.net/pyodide/v${PYODIDE_VE
 /** Path to the static worker script. Served from `public/`, never bundled. */
 export const PYODIDE_WORKER_URL = "/pyodide-worker.js";
 
+/**
+ * The worker MUST be a module worker. Pyodide 314 throws "Classic web workers
+ * are not supported", and cross-origin `importScripts` is blocked outright by
+ * some browsers. The worker loads the runtime with a dynamic `import()`, which
+ * needs this.
+ */
+export const PYODIDE_WORKER_OPTIONS: WorkerOptions = { type: "module" };
+
 /* ---------------------------------------------------------------------------
    Palette handed to matplotlib
    --------------------------------------------------------------------------- */

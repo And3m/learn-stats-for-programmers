@@ -15,6 +15,7 @@ import {
 import type { PyPackage } from "@/lib/content";
 import {
   PYODIDE_INDEX_URL,
+  PYODIDE_WORKER_OPTIONS,
   PYODIDE_WORKER_URL,
   phaseLabel,
   readPalette,
@@ -37,6 +38,12 @@ export type RunOptions = {
   packages: PyPackage[];
   datasets: string[];
   onStream?: (stream: "stdout" | "stderr", text: string) => void;
+};
+
+/** One caller awaiting the current boot. */
+type ReadyWaiter = {
+  resolve: (worker: Worker) => void;
+  reject: (reason: Error) => void;
 };
 
 type PendingRun = {
@@ -90,7 +97,14 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
 
   const workerRef = useRef<Worker | null>(null);
-  const readyRef = useRef<{ resolve: () => void; reject: (reason: Error) => void } | null>(null);
+  /**
+   * Everyone awaiting the current boot. This has to be a queue: several cells
+   * can call `run()` before the runtime is ready, and each needs its own
+   * settlement. Keeping a single slot meant a second caller overwrote the
+   * first one's `reject`, so a failed boot left that cell awaiting forever
+   * with its Run button disabled.
+   */
+  const readyWaitersRef = useRef<ReadyWaiter[]>([]);
   const pendingRef = useRef(new Map<string, PendingRun>());
   const runCounter = useRef(0);
 
@@ -103,8 +117,9 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
     }
     pendingRef.current.clear();
 
-    readyRef.current?.reject(new Error(reason));
-    readyRef.current = null;
+    const waiters = readyWaitersRef.current;
+    readyWaitersRef.current = [];
+    for (const waiter of waiters) waiter.reject(new Error(reason));
 
     setBusy(false);
     setPhase("idle");
@@ -116,20 +131,15 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
       return Promise.resolve(workerRef.current);
     }
 
-    if (workerRef.current && readyRef.current) {
-      const existing = workerRef.current;
-      const pendingReady = readyRef.current;
-      return new Promise((resolve, reject) => {
-        const previous = pendingReady.resolve;
-        pendingReady.resolve = () => {
-          previous();
-          resolve(existing);
-        };
-        pendingReady.reject = reject;
+    // A boot is already in flight: join the queue rather than starting a
+    // second worker or displacing the caller that started this one.
+    if (workerRef.current) {
+      return new Promise<Worker>((resolve, reject) => {
+        readyWaitersRef.current.push({ resolve, reject });
       });
     }
 
-    const worker = new Worker(PYODIDE_WORKER_URL);
+    const worker = new Worker(PYODIDE_WORKER_URL, PYODIDE_WORKER_OPTIONS);
     workerRef.current = worker;
     setStatus("starting");
     setError(null);
@@ -147,8 +157,9 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
           setStatus("ready");
           setPhase("idle");
           setPhaseDetail("Ready");
-          readyRef.current?.resolve();
-          readyRef.current = null;
+          const waiters = readyWaitersRef.current;
+          readyWaitersRef.current = [];
+          for (const waiter of waiters) waiter.resolve(worker);
           break;
         }
         case "stream": {
@@ -165,6 +176,10 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
             error: message.error,
             images: message.images,
           });
+          break;
+        }
+        case "reset-done": {
+          // Namespace cleared; nothing for the UI to do beyond staying ready.
           break;
         }
         case "fatal": {
@@ -186,10 +201,7 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
     };
 
     const readyPromise = new Promise<Worker>((resolve, reject) => {
-      readyRef.current = {
-        resolve: () => resolve(worker),
-        reject,
-      };
+      readyWaitersRef.current.push({ resolve, reject });
     });
 
     const request: WorkerRequest = {
@@ -243,6 +255,14 @@ export function PyodideProvider({ children }: { children: ReactNode }) {
           images: [],
           error: cause instanceof Error ? cause.message : String(cause),
         };
+      }
+
+      // `stop()` may have terminated this worker while we awaited the boot and
+      // the datasets above. Posting to a dead worker would register a pending
+      // run that can never resolve, wedging `busy` true and disabling every
+      // Run button on the page.
+      if (workerRef.current !== worker) {
+        return { repr: null, images: [], error: "Stopped." };
       }
 
       runCounter.current += 1;

@@ -50,10 +50,24 @@ export function PythonCell({
     valueRef.current = value;
   }, [value]);
 
+  // Ctrl+Enter bypasses the Run button's `disabled`, so `execute` has to hold
+  // the gate itself. Refs, not state, so the guard does not become a dependency
+  // and rebuild the editor extensions.
+  const runningRef = useRef(running);
+  const busyRef = useRef(busy);
+  useEffect(() => {
+    runningRef.current = running;
+    busyRef.current = busy;
+  }, [running, busy]);
+
   const effectivePackages = packages ?? lessonRuntime.packages;
   const effectiveDatasets = datasets ?? lessonRuntime.datasets;
 
   const execute = useCallback(async () => {
+    // A second concurrent run would overwrite the worker's `currentRunId` and
+    // clear captured figures, so output would land in the wrong cell.
+    if (runningRef.current || busyRef.current) return;
+
     setRunning(true);
     setHasRun(true);
     setLines([]);
@@ -73,6 +87,8 @@ export function PythonCell({
     setError(outcome.error);
     setRunning(false);
   }, [run, effectivePackages, effectiveDatasets]);
+
+  const handleRun = useCallback(() => void execute(), [execute]);
 
   const reset = () => {
     setValue(source);
@@ -104,7 +120,7 @@ export function PythonCell({
           <button
             type="button"
             className="python-cell__action python-cell__action--run"
-            onClick={isOff ? start : () => void execute()}
+            onClick={isOff ? start : handleRun}
             disabled={running || (busy && !running)}
           >
             <Play size={13} aria-hidden />
@@ -114,7 +130,7 @@ export function PythonCell({
       </header>
 
       <div className="python-cell__editor">
-        <CodeEditor value={value} onChange={setValue} onRun={() => void execute()} />
+        <CodeEditor value={value} onChange={setValue} onRun={handleRun} />
       </div>
 
       {status === "starting" ? <p className="python-cell__status">{phaseDetail}</p> : null}
