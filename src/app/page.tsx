@@ -1,7 +1,14 @@
+import { ArrowUpRight, BookOpen, FileText, List, Play } from "lucide-react";
 import Link from "next/link";
 
 import { ResumeCard } from "@/components/progress/resume-card";
-import { chapterHref, chapterMinutes, chapters, courseStats } from "@/lib/content";
+import {
+  chapterHref,
+  chapterMinutes,
+  chapters,
+  courseStats,
+  sourceBook,
+} from "@/lib/content";
 
 export default function HomePage() {
   const stats = courseStats();
@@ -30,6 +37,36 @@ export default function HomePage() {
               Python in the browser
             </p>
           </div>
+
+          {/* Primary navigation for the home page, in the rail beside the
+              cover — the header no longer carries it. */}
+          <nav className="rail-nav" aria-label="Course">
+            <Link
+              className="rail-nav__item rail-nav__item--primary"
+              href="/chapters/groundwork/why-quantitative-thinking"
+            >
+              <Play size={14} aria-hidden />
+              Start reading
+            </Link>
+            <Link className="rail-nav__item" href="/glossary">
+              <List size={14} aria-hidden />
+              Glossary
+            </Link>
+            <Link className="rail-nav__item" href="/reading">
+              <FileText size={14} aria-hidden />
+              Further reading
+            </Link>
+            <a
+              className="rail-nav__item"
+              href={sourceBook.url}
+              target="_blank"
+              rel="noreferrer noopener"
+            >
+              <BookOpen size={14} aria-hidden />
+              The source book
+              <ArrowUpRight size={12} aria-hidden className="rail-nav__external" />
+            </a>
+          </nav>
         </aside>
 
         <div className="home__intro">

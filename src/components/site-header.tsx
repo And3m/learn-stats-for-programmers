@@ -4,12 +4,13 @@ import { AuthorLinks } from "@/components/author-links";
 import { SearchDialog } from "@/components/search/search-dialog";
 import { ThemeToggle } from "@/components/theme-toggle";
 
-const links: [label: string, href: string][] = [
-  ["Chapters", "/chapters"],
-  ["Playground", "/playground"],
-  ["Glossary", "/glossary"],
-];
-
+/**
+ * Deliberately minimal: brand, search, theme, author.
+ *
+ * Chapters / Playground / Glossary used to sit here. Primary navigation now
+ * lives where the reader already is — the home page rail, the lesson sidebar,
+ * and the footer — which keeps the header quiet on every page.
+ */
 export function SiteHeader() {
   return (
     <header className="site-header">
@@ -19,11 +20,6 @@ export function SiteHeader() {
           Statistics for Programmers
         </Link>
         <nav className="site-header__nav" aria-label="Main">
-          {links.map(([label, href]) => (
-            <Link key={href} href={href} className="site-header__link">
-              {label}
-            </Link>
-          ))}
           <SearchDialog />
           <ThemeToggle />
           <AuthorLinks />
