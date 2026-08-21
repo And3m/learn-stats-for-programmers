@@ -133,11 +133,13 @@ function fuelEfficiency() {
 
 /**
  * Ground truth log-odds:
- *   -0.9 - 0.011*(credit_score - 650) + 0.55*debt_to_income
- *        - 0.020*months_employed + 0.62*prior_defaults
+ *   -0.9 - 0.011*(credit_score - 650) + 2.2*debt_to_income
+ *        - 0.020*min(months_employed, 120) + 0.62*prior_defaults
  *
- * Base rate lands near 12%, which is imbalanced enough that accuracy alone
- * flatters a useless model — the point of lesson 5.3.
+ * Base rate lands near 21%, which is imbalanced enough that accuracy alone
+ * flatters a useless model — the point of lesson 5.3. Keep these numbers in
+ * step with logistic-regression/fitting-and-interpreting.mdx, which quotes
+ * them as the answer the fit should recover.
  */
 function loanDefaults() {
   const rng = makeRng(5_0002);

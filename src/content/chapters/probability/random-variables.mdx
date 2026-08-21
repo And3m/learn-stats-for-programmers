@@ -41,7 +41,7 @@ every meaningful question about them is about an interval.
 | Described by | Probability **mass** function | Probability **density** function |
 | $P(X = x)$ | Can be positive | Always zero |
 | Total probability | Sums to 1 | Integrates to 1 |
-| Meaningful question | $P(X = 3)$ | $P(2.5 &lt; X &lt; 3.5)$ |
+| Meaningful question | $P(X = 3)$ | $P(2.5 < X < 3.5)$ |
 
 <h2 id="pmf">Probability mass functions</h2>
 
@@ -102,7 +102,7 @@ $$
 
 Two consequences follow, and both catch people out. First, $f(x)$ can exceed 1 — a density of 4
 is perfectly legal if it only holds over an interval of width 0.1. Second, since a single point
-has zero width, $P(X \le a)$ and $P(X &lt; a)$ are identical for continuous variables. That
+has zero width, $P(X \le a)$ and $P(X < a)$ are identical for continuous variables. That
 distinction matters enormously for discrete variables and not at all here.
 
 <Callout title="Density is not probability" variant="pitfall">
@@ -127,7 +127,7 @@ variables it is the integral of the density, producing a smooth curve from 0 to 
 every interval question reduces to subtraction:
 
 $$
-P(a &lt; X \le b) = F(b) - F(a)
+P(a < X \le b) = F(b) - F(a)
 \qquad
 P(X > a) = 1 - F(a)
 $$

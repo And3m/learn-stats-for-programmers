@@ -18,6 +18,7 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 import { chapters } from "../src/lib/content.ts";
 import { createHost, projectRoot } from "./python-host.mjs";
@@ -305,7 +306,11 @@ ${warnings.length} warning${warnings.length === 1 ? "" : "s"}:`);
   console.log("All good.");
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+// Only run as a script. The extractors above are importable helpers, and
+// importing them should not boot Pyodide and execute every cell in the course.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
