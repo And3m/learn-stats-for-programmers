@@ -744,9 +744,6 @@ svg {
   opacity: 0.88;
 }
 
-.rail-nav__external {
-  color: var(--muted);
-}
 
 .stat-row {
   display: grid;

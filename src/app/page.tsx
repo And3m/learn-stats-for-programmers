@@ -1,14 +1,8 @@
-import { ArrowUpRight, BookOpen, FileText, List, Play, Terminal } from "lucide-react";
+import { FileText, List, Play, Terminal } from "lucide-react";
 import Link from "next/link";
 
 import { ResumeCard } from "@/components/progress/resume-card";
-import {
-  chapterHref,
-  chapterMinutes,
-  chapters,
-  courseStats,
-  sourceBook,
-} from "@/lib/content";
+import { chapterHref, chapterMinutes, chapters, courseStats } from "@/lib/content";
 
 export default function HomePage() {
   const stats = courseStats();
@@ -60,16 +54,6 @@ export default function HomePage() {
               <FileText size={14} aria-hidden />
               Further reading
             </Link>
-            <a
-              className="rail-nav__item"
-              href={sourceBook.url}
-              target="_blank"
-              rel="noreferrer noopener"
-            >
-              <BookOpen size={14} aria-hidden />
-              The source book
-              <ArrowUpRight size={12} aria-hidden className="rail-nav__external" />
-            </a>
           </nav>
         </aside>
 
