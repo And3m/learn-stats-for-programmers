@@ -1,4 +1,4 @@
-import { ArrowUpRight, BookOpen, FileText, List, Play } from "lucide-react";
+import { ArrowUpRight, BookOpen, FileText, List, Play, Terminal } from "lucide-react";
 import Link from "next/link";
 
 import { ResumeCard } from "@/components/progress/resume-card";
@@ -47,6 +47,10 @@ export default function HomePage() {
             >
               <Play size={14} aria-hidden />
               Start reading
+            </Link>
+            <Link className="rail-nav__item" href="/playground">
+              <Terminal size={14} aria-hidden />
+              Playground
             </Link>
             <Link className="rail-nav__item" href="/glossary">
               <List size={14} aria-hidden />
